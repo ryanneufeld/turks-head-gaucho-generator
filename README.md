@@ -39,6 +39,16 @@ The commands appear under **Solid → Create**.
 3. Tie colour A first around the bight pins, following the numbers. For a gaucho, then lay each other colour from its start label along its lane. Where a lane stops short, that cord goes under.
 4. Pull the pins, work the knot tight, tuck the ends.
 
+## OpenSCAD version
+
+`openscad/turks_head_gaucho_jig.scad` is a parametric port for people without Fusion. Same knots (Turk's head, 2-6 colour gaucho, herringbone, headhunter), auto-sizing, coloured over/under lanes, bight pin holes, colour-matched pass numbers, threaded lid with pin storage and clamp notch.
+
+![OpenSCAD preview](openscad/preview.png)
+
+- Open the file, set options in Window > Customizer.
+- `part = all` previews in colour. For multi-colour printing export `jig`, `lid` and each `cord_X` as separate STLs; they share coordinates, so load them as one multi-part object in the slicer.
+- Rendering is slow with the CGAL engine. Use a recent OpenSCAD development snapshot with the Manifold backend (Preferences > Advanced > Backend).
+
 ## Credits
 
 - Gaucho interweave rule checked against the Paracord Guild *Gaucho fan knot (7L6B)* tutorial and the row-coding model of Freakin' Sweet Knots' *Advanced Grid Maker*.
