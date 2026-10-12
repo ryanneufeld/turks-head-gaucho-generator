@@ -1,0 +1,13 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "addin",
+	"author": "Ryan",
+	"description": {
+		"": "Turk's head knot jig generator: Turk's head, gaucho interweave (2-6 colours), herringbone and headhunter's knot. Colour-inlaid cord lanes with over/under, bight pins, pass numbers, screw-on lid with pin storage. Editable after creation; exports multi-colour STLs for Bambu Studio."
+	},
+	"version": "1.0.0",
+	"runOnStartup": true,
+	"supportedOS": "windows|mac",
+	"editEnabled": true,
+	"iconFilename": "AddInIcon.svg"
+}
