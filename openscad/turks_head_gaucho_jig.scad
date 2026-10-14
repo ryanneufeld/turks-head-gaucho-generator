@@ -16,7 +16,9 @@
 /* [Knot] */
 // Knot type
 knot = "gaucho"; // [turkshead:Turk's head, gaucho:Gaucho interweave, herringbone:Herringbone, headhunter:Headhunter's knot]
-// Number of cords / colours (gaucho only)
+// Herringbone colours: single = one cord; follow = colours side by side in one band (doubled knot); interweave = colours spread round like the gaucho (needs an odd number of colours and odd leads)
+colour_layout = "single"; // [single, follow, interweave]
+// Number of cords / colours (gaucho, or herringbone follow / interweave)
 colours = 2; // [2:1:6]
 // Bights (must share no factor with leads)
 bights = 6; // [2:1:30]
@@ -98,11 +100,18 @@ CAVITY_WALL = 2;
 // ---------------------------------------------------------------- knot model
 L = leads;
 B = bights;
-N = knot == "gaucho" ? colours : 1;
-Lg = L * N;                        // crossings per half-pass in the N-cord grid
+HERRING_MULTI = knot == "herringbone" && colour_layout != "single";
+N = knot == "gaucho" || HERRING_MULTI ? colours : 1;
+// GRID: every colour is the whole path shifted round the jig (N*L x N*B model)
+GRID = N > 1 && (knot == "gaucho" || colour_layout == "interweave");
+// FOLLOW: colours side by side in one band that goes over/under together
+FOLLOW = N > 1 && !GRID;
+Lg = GRID ? L * N : L;              // crossings per half-pass
 hr = bight_pins ? pin_d / 2 : 0;
-rho = cord_d / 2 + hr + PIN_CLEAR; // lane wrap radius round its bight pin
 W = N == 1 ? cord_d : N * (cord_d + cord_gap);
+// wrap radius round the bight pin: one lane (grid) or the band's centreline
+rho = FOLLOW ? W / 2 + hr + PIN_CLEAR : cord_d / 2 + hr + PIN_CLEAR;
+function off(m) = FOLLOW ? (m - (N - 1) / 2) * (cord_d + cord_gap) : 0;
 
 function gcd(a, b) = b == 0 ? a : gcd(b, a % b);
 assert(gcd(L, B) == 1, str("Leads and bights must share no factor: ", L, "L x ", B, "B is ", gcd(L, B), " separate loops."));
@@ -126,15 +135,20 @@ function cord_visits(l, b) = [
             others = [for (j2 = [0:2 * b - 1], k2 = [1:l - 1])
                          if ((j2 != j || k2 != k) && cross_id(j2, k2) == id) j2 * (l - 1) + k2 - 1])
         if (len(others) > 0 && n1 < others[0]) [n1, others[0]]];
-if (knot == "herringbone" && over_under)
+if (knot == "herringbone" && over_under && !GRID)
     assert(herring_ok(L, B), str("Over 2 / under 2 does not close on ", L, "L x ", B, "B - try other leads."));
+// interwoven herringbone closes exactly for odd colour counts with odd leads
+// (checked exhaustively in the Fusion add-in; every colour starts in phase)
+if (knot == "herringbone" && over_under && GRID)
+    assert(N % 2 == 1 && L % 2 == 1,
+           "Interwoven herringbone needs an odd number of colours (3, 5) and odd leads; for 2 colours use the gaucho (already over 2 / under 2) or colour_layout = follow.");
 
 function up_over(row, code) = code[(row - 1) % len(code)] == "O";
 // is half-pass j over at its k-th crossing?
 function lane_over(j, k) =
     let(up = j % 2 == 0)
     knot == "herringbone"
-        ? along_code[((j % (2 * B)) * (L - 1) + k - 1) % 4] == "O"
+        ? along_code[((j % (2 * B)) * (Lg - 1) + k - 1) % 4] == "O"
         : let(row = up ? k : Lg - k, o = up_over(row, row_code)) up ? o : !o;
 
 // ---------------------------------------------------------------- sizing
@@ -142,11 +156,11 @@ function circ(d) = PI * d;
 function su_of(d) = d / 2 * L * PI / B;
 function pitch_of(d, h) = circ(d) / B * h / norm([su_of(d), h]);
 function dia_ok(d) =
-    N == 1 ? W <= (circ(d) / B - 2 * hr - 0.4) / 2
+    !GRID ? W <= (circ(d) / B - 2 * hr - 0.4) / 2
            : circ(d) / (B * N) >= 2 * (rho + cord_d / 2) + 0.4;
 // thread crest diameter: leaves a clamp shoulder of 2.5 cord widths, whole mm
 function thread_d(d) = let(t = floor(d - 2 * max(2.5 * cord_d, LID_MIN_WALL) + 1e-6)) t >= 12 ? t : 0;
-function grid_ok(d, h) = N < 2 ? true :
+function grid_ok(d, h) = !GRID ? true :
     let(s = su_of(d), m = norm([s, h]), dp = rho / sin(atan2(s, h)), zf = dp * pow(h / m, 2))
     h / (N * L) >= zf + cord_d / 2;
 function len_ok(d, len_) = let(h = len_ - END_MARGIN)
@@ -172,7 +186,7 @@ su = su_of(D);
 segm = norm([su, H]);
 d_pin = rho / sin(atan2(su, H));
 g_shift = C / (B * N);
-function shift(m) = (m - (N - 1) / 2) * g_shift;
+function shift(m) = GRID ? (m - (N - 1) / 2) * g_shift : 0;
 
 assert(dia_ok(D), str("Diameter too small for these cords/bights: needs about ", auto_dia(), " mm."));
 assert(len_ok(D, LEN), max_height > 0 && length == 0
@@ -190,23 +204,28 @@ function V(j, du) = [j * su + du, z0 + (j % 2 == 0 ? 0 : H)];
 function sdir(j) = [su, j % 2 == 0 ? H : -H] / segm;
 function nrm(d) = [-d[1], d[0]];
 function pinp(j, du) = V(j, du) + [0, j % 2 == 0 ? d_pin : -d_pin];
-function foot(P, j, du) = let(n = nrm(sdir(j)), A = V(j, du)) P - n * ((P - A) * n);
-function apex(P, j) = P + [0, j % 2 == 0 ? -rho : rho];
+// foot of the pin on leg j, for a lane `o` to the side of the centreline
+function foot(P, j, du, o = 0) = let(n = nrm(sdir(j)), A = V(j, du) + n * o) P - n * ((P - A) * n);
+function apex(P, j, r) = P + [0, j % 2 == 0 ? -r : r];
 function arc(P, a, b, n = 10) =
-    let(a0 = atan2(a[1] - P[1], a[0] - P[0]), a1 = atan2(b[1] - P[1], b[0] - P[0]),
+    let(r = norm(a - P), a0 = atan2(a[1] - P[1], a[0] - P[0]), a1 = atan2(b[1] - P[1], b[0] - P[0]),
         da0 = a1 - a0, da = da0 > 180 ? da0 - 360 : da0 < -180 ? da0 + 360 : da0)
-    [for (i = [0:n]) P + rho * [cos(a0 + da * i / n), sin(a0 + da * i / n)]];
+    [for (i = [0:n]) P + r * [cos(a0 + da * i / n), sin(a0 + da * i / n)]];
 function line(a, b) = let(n = max(1, ceil(norm(b - a) / leg_step)))
     [for (i = [0:n]) a + (b - a) * i / n];
 // one half-pass of lane du: top/bottom of bight j -> round pin j -> leg -> round pin j+1
-function half_pass(j, du) =
-    let(Pa = pinp(j, du), Pb = pinp(j + 1, du), fa = foot(Pa, j, du), fb = foot(Pb, j, du))
-    concat(arc(Pa, apex(Pa, j), fa), line(fa, fb), arc(Pb, fb, apex(Pb, j + 1)));
+// (followed lanes nest round the same pin: o > 0 is inside at the bottom bights)
+function half_pass(j, du, o = 0) =
+    let(Pa = pinp(j, du), Pb = pinp(j + 1, du), fa = foot(Pa, j, du, o), fb = foot(Pb, j, du, o))
+    concat(arc(Pa, apex(Pa, j, norm(fa - Pa)), fa), line(fa, fb),
+           arc(Pb, fb, apex(Pb, j + 1, norm(fb - Pb))));
 
 // cut boxes where half-pass j goes under: [Q, direction, half width, half length]
 function cuts(j, du) =
     let(d = sdir(j), do = [d[0], -d[1]], sx = abs(d[0] * do[1] - d[1] * do[0]),
-        hs = cord_d / 2 + END_GAP, hl = (cord_d / 2 + hs) / sx + 1)
+        // followed colours: the whole band over/under together
+        wo = FOLLOW ? W - cord_gap : cord_d,
+        hs = wo / 2 + END_GAP, hl = (wo / 2 + hs) / sx + 1)
     !over_under ? [] :
     [for (k = [1:Lg - 1]) if (!lane_over(j, k))
         [V(j, du) + (V(j + 1, du) - V(j, du)) * k / Lg, do, hs, hl]];
@@ -253,7 +272,7 @@ module lane(m) {
         union()
             for (j = [0:2 * B - 1])
                 difference() {
-                    tube(half_pass(j, du));
+                    tube(half_pass(j, du, off(m)));
                     for (c = cuts(j, du)) tangent_box(c[0], c[1], c[2], c[3], 4 * rr + 4);
                 }
     }
@@ -262,7 +281,7 @@ module lane(m) {
 // ---------------------------------------------------------------- pins, numbers
 module pin_holes() {
     if (bight_pins)
-        for (m = [0:N - 1], j = [0:2 * B - 1]) {
+        for (m = [0:GRID ? N - 1 : 0], j = [0:2 * B - 1]) {
             pz = pinp(j, shift(m));
             {
                 a = pz[0] / R * 180 / PI;
@@ -272,14 +291,17 @@ module pin_holes() {
         }
 }
 
-top_edge = z0 + H - d_pin + rho + cord_d / 2;
-bot_edge = z0 + d_pin - rho - cord_d / 2;
+top_edge = z0 + H - d_pin + rho + (FOLLOW ? W / 2 : cord_d / 2);
+bot_edge = z0 + d_pin - rho - (FOLLOW ? W / 2 : cord_d / 2);
 num_h = min(number_h, LID_GAP - 2 * NUM_GAP);
 function number_spots() =
     let(nudge = rho / 2, zt = top_edge + NUM_GAP + num_h / 2, zb = bot_edge - NUM_GAP - num_h / 2)
     concat([for (n = [1:2 * B]) [n == 1 ? (N > 1 ? "A1" : "1") : str(n), 0,
                                   n * su + shift(0) + nudge, n % 2 == 1 ? zt : zb]],
-           [for (m = [1:N - 1]) if (N > 1) [str(chr(65 + m), "1"), m, su + shift(m) + nudge, zt]]);
+           // start labels: grid colours at their own bight, followed ones in a row by A1
+           [for (m = [1:N - 1]) if (N > 1)
+               [str(chr(65 + m), "1"), m,
+                su + (GRID ? shift(m) : m * (num_h * 1.6 + 1)) + nudge, zt]]);
 
 module label(txt, u, z) {
     a = u / R * 180 / PI;
@@ -336,17 +358,17 @@ module spigot() {
 up_dir = [-su, H] / segm;           // up the strand, unrolled (u, z)
 function exit_u(m) = su + shift(m) + up_dir[0] * (zs - (z0 + H)) / up_dir[1];
 module clamp_notch() {
-    w = cord_d * 1.1;
+    w = FOLLOW ? W : cord_d * 1.1;          // followed colours share one notch
     rw = w / 2;
     zc = zs - cord_d * (1 - CLAMP_SQUEEZE) + rw;
-    for (m = [0:N - 1])
+    for (m = [0:GRID ? N - 1 : 0])
         rotate([0, 0, exit_u(m) / R * 180 / PI]) {
             translate([0, 0, zc]) rotate([0, 90, 0]) cylinder(r = rw, h = R + 2, $fn = 32);
             translate([0, -rw, zc]) cube([R + 2, w, thread_len + LID_CAP + 10]);
         }
     // clear the spigot between the outer notches (the stubs left between
     // neighbouring slots would just snap off)
-    if (N > 1) {
+    if (GRID) {
         pad = asin(min(1, rw / max(r_core - 3, rw)));
         a_lo = exit_u(0) / R * 180 / PI - pad;
         a_hi = exit_u(N - 1) / R * 180 / PI + pad;

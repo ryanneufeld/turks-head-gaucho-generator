@@ -298,8 +298,8 @@ def _ring_cutter(tbm, R, th, z, r_in, r_out, a0, sweep, depth):
 
 def _pin_tool_tbm(p, R, H, z0, L, B):
     """All pin holes as one temporary body (or None)."""
-    gaucho = passes_of(p) >= 2
-    spots = pin_points(R, H, z0, L, B, 'none' if gaucho else p['hole_mode'],
+    gaucho = is_grid(p)
+    spots = pin_points(R, H, z0, L, B, 'none' if passes_of(p) >= 2 else p['hole_mode'],
                        p['bight_holes'], pin_clear(p, R, H, L, B), p['edge_rows'],
                        knot_ok(p),
                        bight=((list(fan_shifts(p, R, H, L, B).values()), lane_rho(p))
@@ -672,13 +672,17 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
     lanes = [b[1] for b in bands] if bands else [0.0]
     tools = []
     try:
-        if passes_of(p) >= 2:
+        width = cd * 1.1
+        if is_grid(p):
             a_base = cleat_alignment(p, R, H, L, B, z0, offset=0.0, z_exit=zs)[0]
             angles = [a_base + du / R for du in fan_shifts(p, R, H, L, B).values()]
+        elif is_follow(p):
+            # followed colours leave side by side: one notch for the band
+            angles = [cleat_alignment(p, R, H, L, B, z0, offset=0.0, z_exit=zs)[0]]
+            width = band_width(p) + 0.1 * cd
         else:
             angles = [cleat_alignment(p, R, H, L, B, z0, offset=o, z_exit=zs)[0]
                       for o in lanes]
-        width = cd * 1.1
         rw = width / 2.0
         depth_notch = cd * (1.0 - CLAMP_SQUEEZE)         # lid squeezes the cords
         zc = zs - depth_notch + rw                       # centre of the round floor
@@ -1084,7 +1088,8 @@ def build(p, transform=None):
         def to3(pieces):
             return to_3d(R, pieces if solid else u_layers(pieces, r), r)
 
-        fan = passes_of(p) >= 2
+        fan = is_grid(p)
+        multi = passes_of(p) >= 2
         shifts = fan_shifts(p, R, H, L, B) if fan else None
         rho_l = lane_rho(p) if fan else rho
         grid = (passes_of(p), grid_code(p)) if fan else None
@@ -1095,17 +1100,18 @@ def build(p, transform=None):
             pin_tbm = _pin_tool_tbm(p, R, H, z0, L, B)
             groove_tools, sub_occs = [], []
             colour = p.get('colour_bodies', True)
-            groups = sorted(set(types)) if (colour or fan) else [None]
+            groups = sorted(set(types)) if (colour or multi) else [None]
             for t in groups:
                 idx = [i for i, x in enumerate(types) if t is None or x == t]
                 r_t, depth_t = r, depth
-                if fan and not colour and t != 'c0':
+                if multi and not colour and t != 'c0':
                     # one-colour print: colour B is a narrow centre groove,
                     # colour A the full-width recess, so they read apart
                     idx, r_t = [idx[len(idx) // 2]], min(0.06, r)
                     depth_t = r_t
-                    offsets = list(offsets)
-                    offsets[idx[0]] = 0.0
+                    if fan:
+                        offsets = list(offsets)
+                        offsets[idx[0]] = 0.0
                 res = knot_paths(R, H, z0, L, B, [offsets[i] for i in idx], rho_l, depth_t,
                                  p['over_under'], band_h=W / 2.0, cord_code=cord_code_of(p),
                                  weave=row_weave_of(p),

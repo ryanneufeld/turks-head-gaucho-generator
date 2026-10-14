@@ -8,7 +8,7 @@ A Fusion add-in that builds 3D-printable jigs (mandrels) for tying Turk's head k
 |---|---|---|
 | Turk's head | 1 | Over 1 / under 1 (other weaves in Advanced) |
 | Gaucho interweave | 2–6 colours | N·L × N·B Turk's head, row-coded U^N O^N |
-| Herringbone | 1 | Over 2 / under 2 along the cord |
+| Herringbone | 1–6 | Over 2 / under 2 along the cord. Several colours either *followed* (side by side in one band, like a doubled knot) or *interwoven* (spread round like the gaucho; odd colour counts with odd leads) |
 | Headhunter's knot | 1 | Crossings in pairs of rows |
 
 Leads and bights are kept tieable automatically: if they share a factor, the other number moves to the nearest value that works.
@@ -41,7 +41,7 @@ The commands appear under **Solid → Create**.
 
 ## OpenSCAD version
 
-`openscad/turks_head_gaucho_jig.scad` is a parametric port for people without Fusion. Same knots (Turk's head, 2-6 colour gaucho, herringbone, headhunter), auto-sizing, coloured over/under lanes, bight pin holes, colour-matched pass numbers, threaded lid with pin storage and clamp notch.
+`openscad/turks_head_gaucho_jig.scad` is a parametric port for people without Fusion. Same knots (Turk's head, 2-6 colour gaucho, herringbone in one or several colours, headhunter), auto-sizing, coloured over/under lanes, bight pin holes, colour-matched pass numbers, threaded lid with pin storage and clamp notch.
 
 ![OpenSCAD preview](openscad/preview.png)
 

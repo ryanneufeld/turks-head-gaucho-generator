@@ -278,8 +278,12 @@ def knot_paths(R, H, z0, L, B, offsets, rho, depth, over_under,
             for k in range(1, Lg):
                 row = k if up else Lg - k
                 C = add(Vs[j], (Vs[j + 1][0] - Vs[j][0], Vs[j + 1][1] - Vs[j][1]), k / Lg)
-                ov = up_over(row, gcode)
-                if not (ov if up else not ov):
+                if callable(gcode):            # along-cord code (herringbone)
+                    lane_ov = gcode(ltype[0], j % n, k)
+                else:                          # row code (gaucho)
+                    ov = up_over(row, gcode)
+                    lane_ov = ov if up else not ov
+                if not lane_ov:
                     out.append((C, (d[0], -d[1]), -hw_o, hw_o))
             return out
         for k in range(1, L):
@@ -731,7 +735,7 @@ MARK_STYLES = (
 
 def mark_style(p):
     if passes_of(p) >= 2:
-        return 'solid'      # gaucho lanes are only built as solid paths
+        return 'solid'      # multi-colour lanes are only built as solid paths
     return p.get('mark_style', 'outline')
 
 
@@ -751,15 +755,19 @@ def fill_depth(p):
 def fill_offsets(p):
     """One tube centre per cord lane (offset, lane type)."""
     bands = lane_layout(p)[3] or [('b', 0.0, p['cord_d'] / 2.0)]
-    fan = passes_of(p) >= 2
-    # gaucho lanes are placed by shifting (fan_shifts): offsets are relative
-    # to each lane's own centreline
+    fan = is_grid(p)
+    # grid lanes are placed by shifting (fan_shifts): offsets are relative
+    # to each lane's own centreline; followed lanes sit side by side
     return [0.0 if fan else c for _, c, _ in bands], [t for t, _, _ in bands]
 
 
 def knot_ok(p):
     """Validity test for a lead count with this jig's weave (single cord AND
     the along-cord code closes consistently)."""
+    if p.get('style') == 'herringbone' and is_grid(p) and p.get('over_under', True):
+        n = passes_of(p)
+        sign = 1 if p.get('swap_lanes', True) else -1
+        return lambda l, b: herring_grid_phases(n, l, b, sign) is not None
     code = weave_of(p) if p.get('over_under', True) else 'OU'
     return lambda l, b: code_consistent(l, b, code)
 
@@ -800,10 +808,80 @@ def row_weave_of(p):
     return 'OOUU' if p.get('style') == 'headhunter' else 'OU'
 
 
+HERRING_LAYOUTS = (
+    ('single', 'One colour'),
+    ('follow', 'Followed passes (colours side by side)'),
+    ('interweave', 'Interwoven (colours spread round)'),
+)
+
+
 def passes_of(p):
-    if p.get('style', 'single') in ('doubled', 'fan'):
+    st = p.get('style', 'single')
+    if st in ('doubled', 'fan'):
+        return max(2, int(p.get('strands', 2)))
+    if st == 'herringbone' and p.get('colour_layout', 'single') != 'single':
         return max(2, int(p.get('strands', 2)))
     return 1
+
+
+def is_grid(p):
+    """Colours spread evenly round the jig, each the whole path shifted (the
+    N*L x N*B Turk's head model): gaucho, interwoven herringbone."""
+    return passes_of(p) >= 2 and (p.get('style') in ('fan', 'doubled')
+                                  or p.get('colour_layout') == 'interweave')
+
+
+def is_follow(p):
+    """Colours side by side in one band that follows the path (a doubled /
+    tripled knot): every colour of a band goes over or under together."""
+    return passes_of(p) >= 2 and p.get('style') == 'herringbone' \
+        and p.get('colour_layout') == 'follow'
+
+
+def _grid_visits(n, L, B, sign=1):
+    """Crossings of the N*L x N*B grid: {position: [(lane, along-cord index)]}.
+    Units of u: su/(N*L); lane m is shifted by sign*(2m - (n-1))."""
+    Lg = n * L
+    C = 2 * B * n
+    v = {}
+    for m in range(n):
+        du = sign * (2 * m - (n - 1))
+        for j in range(2 * B):
+            for k in range(1, Lg):
+                row = k if j % 2 == 0 else Lg - k
+                u = (j * Lg + du + k) % C
+                v.setdefault((row, u), []).append((m, j * (Lg - 1) + k - 1))
+    return v
+
+
+def herring_grid_phases(n, L, B, sign=1, code='OOUU'):
+    """Interwoven herringbone: along-cord start phase for each colour so that
+    over 2 / under 2 closes at every crossing of the N-colour grid, or None.
+    (Only odd colour counts with odd leads work; 2 colours over-2/under-2 is
+    the gaucho interweave.)"""
+    import itertools
+    if math.gcd(L, B) != 1 or n < 2:
+        return None
+    v = _grid_visits(n, L, B, sign)
+    if any(len(x) != 2 for x in v.values()):
+        return None
+    pairs = [tuple(x) for x in v.values()]
+    for ph in itertools.product(range(len(code)), repeat=n - 1):
+        ph = (0,) + ph
+        if all(code[(a + ph[ma]) % len(code)] != code[(b + ph[mb]) % len(code)]
+               for (ma, a), (mb, b) in pairs):
+            return ph
+    return None
+
+
+def herring_lane_over(n, L, B, phases, code='OOUU'):
+    """over(lane_type, half_pass j, crossing k) for interwoven herringbone."""
+    Lg = n * L
+
+    def over(t, j, k):
+        m = int(t[1:])
+        return code[(j * (Lg - 1) + k - 1 + phases[m]) % len(code)] == 'O'
+    return over
 
 
 def lane_letter(t):
@@ -814,8 +892,14 @@ def lane_letter(t):
 def grid_code(p):
     """Gaucho (Grid Maker 'row coding'): the N-cord knot is a Turk's head of
     N*leads x N*bights whose crossings go by row, U^N O^N repeating upward.
-    Checked against every pass of the Paracord Guild 7L6B gaucho run list."""
+    Checked against every pass of the Paracord Guild 7L6B gaucho run list.
+    Interwoven herringbone: a function over(lane, j, k) instead (over 2 /
+    under 2 along each cord)."""
     n = passes_of(p)
+    if p.get('style') == 'herringbone':
+        sign = 1 if p.get('swap_lanes', True) else -1
+        ph = herring_grid_phases(n, p['leads'], p['bights'], sign) or (0,) * n
+        return herring_lane_over(n, p['leads'], p['bights'], ph)
     return 'U' * n + 'O' * n
 
 
@@ -846,11 +930,17 @@ def lane_layout(p):
     if n >= 2:
         g = p['pass_gap']
         types = ['c%d' % m for m in range(n)]
+        # followed: lanes side by side across the band (colour A on the
+        # swap_lanes side); grid: every lane on its own shifted centreline
+        sgn = 1.0 if p.get('swap_lanes', True) else -1.0
+        cs = [sgn * (m - (n - 1) / 2.0) * (cd + g) if is_follow(p) else 0.0
+              for m in range(n)]
         offs, tys = [], []
-        for t in types:
-            offs += [-cd / 2.0, cd / 2.0]
+        for t, c in zip(types, cs):
+            offs += [c - cd / 2.0, c + cd / 2.0]
             tys += [t, t]
-        return (n * (cd + g), tuple(offs), tys, [(t, 0.0, cd / 2.0) for t in types])
+        return (n * (cd + g), tuple(offs), tys,
+                [(t, c, cd / 2.0) for t, c in zip(types, cs)])
     return cd, (cd / 2.0, -cd / 2.0), ['b', 'b'], None
 
 
@@ -1079,6 +1169,16 @@ def pass_number_spots(p, R, H, L, B, z0):
     C = 2 * math.pi * R
     out = []
     zt, zb = top_edge + gap + h / 2.0, bot_edge - gap - h / 2.0
+    if is_follow(p):
+        # one band: number it, and show every colour starts at the A1 bight
+        w_txt = 0.72 * h * 2 + 0.1
+        for n in range(1, 2 * B + 1):
+            u = (n * su + 0.5 * rho) % C
+            out.append(('A1' if n == 1 else str(n), u, zt if n % 2 else zb))
+        for m in range(1, passes_of(p)):
+            t = 'c%d' % m
+            out.append((lane_letter(t) + '1', (su + 0.5 * rho + m * w_txt) % C, zt))
+        return h, out
     if passes_of(p) >= 2:
         # number colour A's bights; mark where each colour starts: A1, B1, ...
         sh = fan_shifts(p, R, H, L, B)
@@ -1101,7 +1201,7 @@ def grid_edge_ok(p, R, H, L, B):
     vertex) must lie on the straight legs, above where each lane starts
     curving round its pin."""
     n = passes_of(p)
-    if n < 2:
+    if n < 2 or not is_grid(p):
         return True
     su = R * L * math.pi / B
     m = math.hypot(su, H)

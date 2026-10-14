@@ -38,6 +38,9 @@ def read_inputs(inputs):
         'colour_bodies': v('colour_bodies'),
         'pass_numbers': v('pass_numbers'),
         'strands': v('strands'),
+        'colour_layout': (HERRING_LAYOUTS[[n for _, n in HERRING_LAYOUTS].index(
+            inputs.itemById('colour_layout').selectedItem.name)][0]
+            if inputs.itemById('colour_layout') else 'single'),
         'mark_style': MARK_STYLES[[n for _, n in MARK_STYLES].index(
             inputs.itemById('mark_style').selectedItem.name)][0],
         'cord_d': v('cord_d'), 'pass_gap': v('pass_gap'), 'swap_lanes': v('swap_lanes'),
@@ -84,6 +87,17 @@ def problems(p):
                     '{}L × {}B would be {} separate loops.'.format(L, B, math.gcd(L, B)))
     elif p['over_under'] and not weave_valid(code):
         errs.append('Custom weave must use only O and U, e.g. OOUU.')
+    elif p['over_under'] and p.get('style') == 'herringbone' and is_grid(p):
+        n_ = passes_of(p)
+        if not knot_ok(p)(L, B):
+            good = [l for l in range(2, 26) if knot_ok(p)(l, B)]
+            errs.append('Interwoven herringbone (over 2 / under 2) does not close with {} '
+                        'colours on {}L × {}B. {}'.format(
+                            n_, L, B,
+                            'With {} bights try {} leads.'.format(B, ', '.join(map(str, good[:6])))
+                            if good else
+                            'It needs an odd number of colours (3 or 5); for 2 colours use '
+                            'Gaucho interweave (already over 2 / under 2) or Followed passes.'))
     elif p['over_under'] and not code_consistent(L, B, code):
         ok = consistent_leads(B, code, 2, 25)
         errs.append('This weave does not close on {}L × {}B (some crossings would need '
@@ -184,7 +198,9 @@ def info_text(p):
     L, B = p['leads'], p['bights']
     R = p['dia'] / 2.0
     n = passes_of(p)
-    if n >= 2:
+    if is_follow(p):
+        n_holes = 2 * B if p['bight_holes'] else 0
+    elif n >= 2:
         n_holes = 2 * B * n if p['bight_holes'] else 0
     else:
         n_holes = len(pin_points(R, p['span'], 0, L, B, p['hole_mode'], p['bight_holes'],
@@ -193,13 +209,20 @@ def info_text(p):
     pitch = strand_pitch(R, p['span'], L, B)
     txt = ('Overall length: {}<br>Knot span: {}<br>Crossings: {}<br>Pin holes: {}'
            '<br>Cord per pass ≈ {}'.format(
-               fmt(top + p['handle_len']), fmt(p['span']), n * B * (n * L - 1), n_holes,
+               fmt(top + p['handle_len']), fmt(p['span']),
+               n * n * B * (L - 1) if is_follow(p) else n * B * (n * L - 1), n_holes,
                fmt(path_length(R, p['span'], L, B))))
     txt += '<br>Cord lanes: {} wide in {} spacing ({:.0f}% of max)'.format(
         fmt(band_width(p)), fmt(pitch),
         100.0 * p['ribbon_pct'] / max(max_ribbon_pct(p, R, p['span'], L, B), 1e-9))
     n = passes_of(p)
-    if n >= 2:
+    if is_follow(p):
+        letters = ', '.join(chr(ord('A') + i) for i in range(1, n))
+        txt += ('<br>{} colours side by side. Tie colour A first (follow the numbers), '
+                'then follow it with {} in turn, each in its own lane beside A, '
+                'starting at the A1 bight. The whole band goes over or under '
+                'together.'.format(n, letters))
+    elif n >= 2:
         letters = ', '.join(chr(ord('A') + i) for i in range(1, n))
         txt += ('<br>{} colours. Tie colour A first on its bight pins (follow the '
                 'numbers), then {} in turn, each from its own start label '
@@ -211,14 +234,14 @@ def info_text(p):
         n_ = passes_of(p)
         txt += '<br>Lid: {} mm bottle-style thread ({:g} mm pitch), {}'.format(
             size, THREAD_PITCH * 10,
-            'a clamp notch per cord' if n_ > 1 else 'one clamp notch')
+            'a clamp notch per cord' if n_ > 1 and not is_follow(p) else 'one clamp notch')
         sd = storage_depth(p, R, p['span'], L, B, END_MARGIN / 2.0)
         if not p['storage']:
             txt += '<br>Pin storage: off'
         else:
             txt += ('<br>Pin storage: {} dia × {} deep'.format(fmt(2 * rc), fmt(sd))
                     if rc > 0.15 and sd > 0 else '<br>Pin storage: no room')
-    if p['over_under']:
+    if p['over_under'] and not is_grid(p):
         code = weave_of(p)
         seq = ''.join(code[n % len(code)] for n in range(L - 1))
         txt += '<br>First strand from the bottom: {}'.format(' '.join(seq))
@@ -242,8 +265,7 @@ def sync_visibility(ins):
     hm_in, edge_in = ins.itemById('hole_mode'), ins.itemById('edge_rows')
     if hm_in and edge_in:
         # gaucho jigs only get bight pins: body pins are ignored there
-        st = ins.itemById('style').selectedItem
-        gaucho = st is not None and st.name == dict(KNOT_STYLES).get('fan')
+        gaucho = passes_of(read_inputs(ins)) >= 2   # multi-colour: bight pins only
         hm_in.isEnabled = not gaucho
         hm = hm_in.selectedItem
         edge_in.isEnabled = not gaucho and hm is not None and hm.name in (
@@ -261,7 +283,11 @@ def sync_visibility(ins):
         ou and sel is not None and sel.name == dict(WEAVES)['custom'])
     st = ins.itemById('style').selectedItem
     key = {n: k for k, n in KNOT_STYLES}.get(st.name) if st else None
-    two = key == 'fan'
+    cl = ins.itemById('colour_layout')
+    herring = key == 'herringbone'
+    cl.isVisible = herring
+    layout = {n: k for k, n in HERRING_LAYOUTS}.get(cl.selectedItem.name) if cl.selectedItem else 'single'
+    two = key == 'fan' or (herring and layout != 'single')
     ins.itemById('strands').isVisible = two
     ins.itemById('pass_gap').isEnabled = two
     ins.itemById('swap_lanes').isEnabled = two
@@ -290,6 +316,10 @@ def add_inputs(ins):
                                       adsk.core.DropDownStyles.TextListDropDownStyle)
     for i, (_, name) in enumerate(KNOT_STYLES):
         stl.listItems.add(name, i == 1)
+    cl = ins.addDropDownCommandInput('colour_layout', 'Colours',
+                                     adsk.core.DropDownStyles.TextListDropDownStyle)
+    for i, (_, name) in enumerate(HERRING_LAYOUTS):
+        cl.listItems.add(name, i == 0)
     ins.addIntegerSpinnerCommandInput('strands', 'Colours (cords)', 2, 6, 1, 2)
     ins.addIntegerSpinnerCommandInput('bights', 'Bights', 2, 99, 1, 6)
     ins.addIntegerSpinnerCommandInput('leads', 'Leads', 2, 99, 1, 7)
@@ -388,7 +418,7 @@ def load_inputs(ins, p):
         p = dict(p, mark_style='outline')   # jigs saved before solid marking
     for key, table in (('hole_mode', HOLE_MODES), ('weave', WEAVES),
                        ('style', KNOT_STYLES), ('top_mode', TOP_MODES),
-                       ('mark_style', MARK_STYLES)):
+                       ('mark_style', MARK_STYLES), ('colour_layout', HERRING_LAYOUTS)):
         if key in p:
             target = dict(table).get(p[key])
             items = ins.itemById(key).listItems
@@ -462,7 +492,7 @@ def autosize(ins):
     p = read_inputs(ins)
     if not p.get('auto_size') or not knot_valid(p['leads'], p['bights']):
         return
-    if p['over_under'] and not code_consistent(p['leads'], p['bights'], weave_of(p)):
+    if p['over_under'] and not knot_ok(p)(p['leads'], p['bights']):
         return
     hmax = p.get('max_height', 0.0)
 
@@ -512,7 +542,8 @@ def fix_gcd(ins, changed):
     """Keep leads x bights tieable: on a leads/bights edit, move the OTHER
     number to the nearest value that shares no factor with it (and, for
     herringbone, lets over-2/under-2 close). On a knot change, move leads."""
-    if changed not in ('leads', 'bights', 'style', 'weave', 'weave_custom', 'over_under'):
+    if changed not in ('leads', 'bights', 'style', 'weave', 'weave_custom', 'over_under',
+                       'strands', 'colour_layout', 'swap_lanes'):
         return
     p = read_inputs(ins)
     ok = knot_ok(p)
