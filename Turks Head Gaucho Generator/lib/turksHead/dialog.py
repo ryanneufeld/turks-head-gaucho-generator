@@ -31,6 +31,7 @@ def read_inputs(inputs):
             inputs.itemById('top_mode').selectedItem.name)][0],
         'thread_len': v('thread_len'), 'thread_clearance': v('thread_clearance'),
         'storage': v('storage'), 'auto_size': v('auto_size'),
+        'max_height': v('max_height') if inputs.itemById('max_height') else 0.0,
         'cleat_ridges': v('cleat_ridges'),
         'cleat_align': v('cleat_align'), 'cleat_leadin': v('cleat_leadin'),
         'cleat_depth': v('cleat_depth'),
@@ -90,6 +91,20 @@ def problems(p):
                         L, B, B, ', '.join(str(x) for x in ok[:6]) or 'other'))
     if p['length'] <= END_MARGIN:
         errs.append('Mandrel length must be more than 25.4 mm.')
+    elif p.get('max_height', 0) > 0 and knot_valid(L, B) \
+            and print_height(p) > p['max_height'] + 1e-6:
+        if p.get('auto_size'):
+            hm = min_print_height(p)
+            errs.append('Too tall for the {:.0f} mm print height limit: with this cord, '
+                        'colours and leads the knot needs at least {} even on a much '
+                        'wider mandrel (the lanes need room between rows). Use fewer '
+                        'leads or thinner cord.'.format(
+                            p['max_height'] * 10,
+                            '{:.0f} mm'.format(hm * 10) if hm else 'more height'))
+        else:
+            errs.append('Jig is {:.1f} mm tall, over the {:.0f} mm print height limit: '
+                        'shorten it or use automatic size.'.format(
+                            print_height(p) * 10, p['max_height'] * 10))
     if p['bore'] >= p['dia']:
         errs.append('Bore must be smaller than diameter.')
     if p['handle_len'] < 0:
@@ -148,7 +163,7 @@ def problems(p):
         errs.append('Pin hole diameter must be > 0.')
     if p['chamfer'] < 0 or p['chamfer'] >= (p['dia'] - p['bore']) / 2.0:
         errs.append('Chamfer too large.')
-    if (knot_valid(L, B) and p['span'] > 0 and L >= 2
+    if (knot_valid(L, B) and p['span'] > 0 and L >= 2 and passes_of(p) < 2
             and (p['bight_holes'] or p['hole_mode'] in ('turn', 'vertex'))):
         d = vertex_offset(R, p['span'], L, B, pin_clear(p, R, p['span'], L, B))
         if d >= p['span'] / L * 0.9:
@@ -292,6 +307,7 @@ def add_inputs(ins):
     g.addBoolValueInput('auto_size', 'Size the mandrel automatically', True, '', True)
     g.addValueInput('dia', 'Diameter', 'mm', VI('43 mm'))
     g.addValueInput('length', 'Length (knot span = length − 25.4 mm)', 'mm', VI('150 mm'))
+    g.addValueInput('max_height', 'Max print height (0 = no limit)', 'mm', VI('0 mm'))
     g.addValueInput('bore', 'Centre bore (0 = none)', 'mm', VI('0 mm'))
     g.addValueInput('chamfer', 'End chamfer', 'mm', VI('1 mm'))
 
@@ -350,7 +366,7 @@ def add_inputs(ins):
 # inputs whose stored value maps straight onto input.value
 _PLAIN_KEYS = ('dia', 'length', 'bore', 'chamfer', 'handle_len', 'handle_dia',
                'cord_d', 'cleat_depth', 'cleat_ridges', 'cleat_align',
-               'thread_len', 'thread_clearance', 'storage', 'auto_size',
+               'thread_len', 'thread_clearance', 'storage', 'auto_size', 'max_height',
                'cleat_leadin', 'bights', 'leads', 'pass_gap', 'swap_lanes', 'colour_bodies', 'pass_numbers', 'strands',
                'engrave', 'over_under', 'line_w', 'line_d',
                'bight_holes', 'edge_rows', 'hole_d', 'hole_depth', 'weave_custom')
@@ -402,7 +418,9 @@ def size_issue(p):
         return 'length'
     if not grid_edge_ok(q, R, q['span'], L, B):
         return 'length'
-    if q['bight_holes'] or q['hole_mode'] in ('turn', 'vertex'):
+    # single-cord pins sit beside the strand vertices; gaucho bight pins are
+    # covered by grid_edge_ok above
+    if passes_of(q) < 2 and (q['bight_holes'] or q['hole_mode'] in ('turn', 'vertex')):
         d = vertex_offset(R, q['span'], L, B, pin_clear(q, R, q['span'], L, B))
         if d >= q['span'] / L * 0.9:
             return 'length'
@@ -411,26 +429,67 @@ def size_issue(p):
 
 AUTO_DIA = 4.0      # cm: smallest automatic diameter
 AUTO_LENGTH = 15.0  # cm: smallest automatic length
+AUTO_MAX_DIA = 30.0
+
+
+def print_height(p):
+    """Height of the jig as printed (handle to spigot top; the lid prints
+    separately)."""
+    R = p['dia'] / 2.0
+    top = top_end(p, R, p['span'], p['leads'], p['bights'], END_MARGIN / 2.0)
+    if top_mode(p) == 'lid':
+        top -= LID_CAP
+    return top + p.get('handle_len', 0.0)
+
+
+def min_print_height(p):
+    """Lowest print height any automatic size can reach (widest mandrel)."""
+    length = END_MARGIN + 1.0
+    while length < 60:
+        q = dict(p, dia=AUTO_MAX_DIA, length=length, span=length - END_MARGIN)
+        q['ribbon_pct'] = ribbon_pct_for(q)
+        if size_issue(q) is None:
+            return print_height(q)
+        length += 0.5
+    return None
 
 
 def autosize(ins):
     """Automatic size: the smallest diameter (>= AUTO_DIA, 1 mm steps), then
-    length (>= AUTO_LENGTH, 5 mm steps), at which the knot fits."""
+    length (>= AUTO_LENGTH, 5 mm steps), at which the knot fits. With a max
+    print height the length is capped there and the diameter grows instead
+    (a fatter mandrel spreads the crossings, so a shorter knot fits)."""
     p = read_inputs(ins)
     if not p.get('auto_size') or not knot_valid(p['leads'], p['bights']):
         return
     if p['over_under'] and not code_consistent(p['leads'], p['bights'], weave_of(p)):
         return
-    dia, length = AUTO_DIA, AUTO_LENGTH
-    for _ in range(800):
+    hmax = p.get('max_height', 0.0)
+
+    def q_of(dia, length):
         q = dict(p, dia=dia, length=length, span=length - END_MARGIN)
-        issue = size_issue(q)
+        q['ribbon_pct'] = ribbon_pct_for(q)
+        return q
+
+    def too_tall(dia, length):
+        return hmax > 0 and print_height(q_of(dia, length)) > hmax + 1e-6
+
+    dia, length = AUTO_DIA, AUTO_LENGTH
+    while too_tall(dia, length) and length - 0.5 > END_MARGIN + 1.0:
+        length = round(length - 0.5, 4)
+    for _ in range(3000):
+        issue = size_issue(q_of(dia, length))
         if issue is None:
             break
-        if issue == 'dia':
-            dia = round(dia + 0.1, 4)
-        else:
+        if issue == 'length' and not too_tall(dia, length + 0.5):
             length = round(length + 0.5, 4)
+        else:
+            dia = round(dia + 0.1, 4)
+            if dia > AUTO_MAX_DIA:
+                return
+            # the taller top end of a bigger jig may push it over the limit
+            while too_tall(dia, length) and length - 0.5 > END_MARGIN + 1.0:
+                length = round(length - 0.5, 4)
     else:
         return
     if abs(dia - p['dia']) > 1e-9:
@@ -476,7 +535,7 @@ def fix_gcd(ins, changed):
 
 _AUTO_TRIGGERS = ('leads', 'bights', 'style', 'strands', 'cord_d', 'pass_gap', 'hole_d', 'hole_mode',
                   'bight_holes', 'edge_rows', 'top_mode', 'line_w', 'engrave', 'weave', 'mark_style',
-                  'weave_custom', 'over_under', 'auto_size')
+                  'weave_custom', 'over_under', 'auto_size', 'max_height')
 
 
 def refresh(ins, changed=None):

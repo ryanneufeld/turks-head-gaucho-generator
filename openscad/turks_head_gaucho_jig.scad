@@ -42,6 +42,8 @@ over_under = true;
 diameter = 0;
 // Length, 0 = automatic (knot span = length - 25.4 mm)
 length = 0;
+// Max print height of the jig, 0 = no limit (e.g. 256 for an X2D printing with both nozzles). Automatic sizing then shortens the jig and widens it to compensate
+max_height = 0;
 // Handle length below the knot (0 = none)
 handle_len = 0;
 // Handle diameter (0 = same as the jig)
@@ -152,8 +154,16 @@ function len_ok(d, len_) = let(h = len_ - END_MARGIN)
 function auto_dia(d = 40) = (dia_ok(d) && (!lid || thread_d(d) >= 12)) || d > 300 ? d : auto_dia(d + 1);
 function auto_len(d, l_ = 150) = len_ok(d, l_) || l_ > 1000 ? l_ : auto_len(d, l_ + 5);
 
-D = diameter > 0 ? diameter : auto_dia();
-LEN = length > 0 ? length : auto_len(D);
+// printed height of the jig for diameter d, length l (lid prints separately)
+function height_of(d, l) = let(h = l - END_MARGIN, dp = rho / sin(atan2(su_of(d), h)))
+    END_MARGIN / 2 + h - dp + rho + cord_d / 2 + LID_GAP + (lid ? thread_len : 0) + handle_len;
+// longest length under the height limit (1 mm steps)
+function cap_len(d, l = 400) = height_of(d, l) <= max_height || l <= END_MARGIN + 10 ? l : cap_len(d, l - 1);
+// with a height limit: smallest diameter whose capped length fits the knot
+function fit_dia(d) = (len_ok(d, cap_len(d)) && (!lid || thread_d(d) >= 12)) || d > 300 ? d : fit_dia(d + 1);
+function fit_len(d, l = 150) = let(c = min(l, cap_len(d))) len_ok(d, c) || l >= cap_len(d) ? c : fit_len(d, l + 5);
+D = diameter > 0 ? diameter : max_height > 0 ? max(auto_dia(), fit_dia(auto_dia())) : auto_dia();
+LEN = length > 0 ? length : max_height > 0 ? fit_len(D) : auto_len(D);
 R = D / 2;
 H = LEN - END_MARGIN;
 z0 = END_MARGIN / 2;
@@ -165,9 +175,14 @@ g_shift = C / (B * N);
 function shift(m) = (m - (N - 1) / 2) * g_shift;
 
 assert(dia_ok(D), str("Diameter too small for these cords/bights: needs about ", auto_dia(), " mm."));
-assert(len_ok(D, LEN), str("Length too short for this knot: needs about ", auto_len(D), " mm."));
+assert(len_ok(D, LEN), max_height > 0 && length == 0
+    ? str("Can't fit under max_height = ", max_height, " mm even on a wider mandrel (the lanes need room between rows): use fewer leads or thinner cord.")
+    : str("Length too short for this knot: needs about ", auto_len(D), " mm."));
 
-echo(str("Jig: ", D, " mm dia x ", LEN, " mm, knot span ", H, " mm, ", N, " cord(s)"));
+echo(str("Jig: ", D, " mm dia x ", LEN, " mm, knot span ", H, " mm, ", N, " cord(s), prints ", height_of(D, LEN), " mm tall"));
+if (max_height > 0)
+    assert(height_of(D, LEN) <= max_height + 1e-6,
+           str("Jig is ", height_of(D, LEN), " mm tall, over max_height: use fewer leads or thinner cord."));
 
 // ---------------------------------------------------------------- 2D paths
 // unrolled plane: u = R * theta, z
