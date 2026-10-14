@@ -424,56 +424,25 @@ def _engrave_solid(comp, paths, boxes, r, name, R, z_lo, z_hi, parametric, keep=
     return bodies[0] if keep else None
 
 
-def _vol(b):
-    try:
-        return b.volume
-    except Exception:
-        return None
-
-
-def _union2(tbm, a, b):
-    """Union b into a copy of a; returns the union, or None if it failed.
-
-    booleanOperation can report success yet drop lumps of a multi-lump body
-    (seen on lane pieces next to a joined bight), so the result's volume is
-    checked against vol(a) + vol(b) - vol(a & b), and the other operand order
-    is tried before giving up."""
-    U = adsk.fusion.BooleanTypes.UnionBooleanType
-    I = adsk.fusion.BooleanTypes.IntersectionBooleanType
-    va, vb = _vol(a), _vol(b)
-    overlap = 0.0
-    if va is not None and vb is not None:
-        x = tbm.copy(a)
-        # an empty intersection may report failure: treat as no overlap (a
-        # wrong guess only keeps b as a separate body, never loses it)
-        overlap = (_vol(x) or 0.0) if _tbm_op(tbm, x, tbm.copy(b), I) else 0.0
-    for p_, q_ in ((a, b), (b, a)):
-        t = tbm.copy(p_)
-        if not _tbm_op(tbm, t, tbm.copy(q_), U):
-            continue
-        if va is None or vb is None:
-            return t
-        want = va + vb - overlap
-        if abs(_vol(t) - want) <= 1e-4 + 1e-3 * want:
-            return t
-    return None
-
-
 def _union_tree(tbm, bodies):
     """Union temporary bodies pairwise (much faster than one by one).
 
-    A pair that won't union cleanly keeps its second body in `left`
-    instead of losing it. Returns (union, left)."""
+    booleanOperation reports failure by returning False rather than raising;
+    a failed pair's second body goes to `left` instead of being lost.
+    Returns (union, left)."""
+    U = adsk.fusion.BooleanTypes.UnionBooleanType
     left = []
     while len(bodies) > 1:
         nxt = []
         for i in range(0, len(bodies) - 1, 2):
-            u = _union2(tbm, bodies[i], bodies[i + 1])
-            if u is None:
-                nxt.append(bodies[i])
+            ok = False
+            try:
+                ok = tbm.booleanOperation(bodies[i], bodies[i + 1], U)
+            except Exception:
+                ok = False
+            nxt.append(bodies[i])
+            if not ok:
                 left.append(bodies[i + 1])
-            else:
-                nxt.append(u)
         if len(bodies) % 2:
             nxt.append(bodies[-1])
         bodies = nxt
@@ -482,11 +451,14 @@ def _union_tree(tbm, bodies):
     # second chance: retry leftovers one at a time
     still = []
     for b in left:
-        u = _union2(tbm, main, b) if main is not None else None
-        if u is None:
+        ok = False
+        if main is not None:
+            try:
+                ok = tbm.booleanOperation(main, b, U)
+            except Exception:
+                ok = False
+        if not ok:
             still.append(b)
-        else:
-            main = u
     return main, still
 
 

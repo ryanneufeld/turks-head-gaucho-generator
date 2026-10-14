@@ -323,10 +323,31 @@ def knot_paths(R, H, z0, L, B, offsets, rho, depth, over_under,
                 pieces.append(cur)
         cur = []
 
+    def graded(t0, t1):
+        # spacing grows from fine (like the arcs) to `step` and back, so a
+        # fitted spline through the points can't overshoot where a straight
+        # meets an arc (it bulged the lane sideways by up to ~0.5 mm, enough
+        # to join a lane piece to the same-colour lane crossing over it)
+        span = t1 - t0
+        if span <= 0:
+            return [t0]
+        head, h = [0.0], 0.04
+        while head[-1] + h < span / 2.0 and h < step:
+            head.append(head[-1] + h)
+            h *= 2.0
+        mid0, mid1 = head[-1], span - head[-1]
+        k = max(1, int(math.ceil((mid1 - mid0) / step))) if mid1 > mid0 else 0
+        mid = [mid0 + (mid1 - mid0) * i / k for i in range(1, k)] if k else []
+        tail = [span - x for x in reversed(head)]
+        ts = head + mid + tail
+        out = []
+        for t in ts:
+            if not out or t - out[-1] > 1e-6:
+                out.append(t)
+        return [t0 + t for t in out]
+
     def sample(a, b, t0, t1, ln, un):
-        k = max(1, int(math.ceil((t1 - t0) / step)))
-        for i in range(k + 1):
-            t = t0 + (t1 - t0) * i / k
+        for t in graded(t0, t1):
             q = (a[0] + (b[0] - a[0]) * t / ln, a[1] + (b[1] - a[1]) * t / ln)
             d = depth
             if cur and math.hypot(q[0] - cur[-1][0][0], q[1] - cur[-1][0][1]) < 1e-6:
