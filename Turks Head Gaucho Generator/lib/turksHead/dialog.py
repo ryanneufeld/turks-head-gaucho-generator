@@ -224,8 +224,12 @@ def sync_visibility(ins):
         ins.itemById(i).isEnabled = not auto
     hm_in, edge_in = ins.itemById('hole_mode'), ins.itemById('edge_rows')
     if hm_in and edge_in:
+        # gaucho jigs only get bight pins: body pins are ignored there
+        st = ins.itemById('style').selectedItem
+        gaucho = st is not None and st.name == dict(KNOT_STYLES).get('fan')
+        hm_in.isEnabled = not gaucho
         hm = hm_in.selectedItem
-        edge_in.isEnabled = hm is not None and hm.name in (
+        edge_in.isEnabled = not gaucho and hm is not None and hm.name in (
             HOLE_MODES[0][1], HOLE_MODES[1][1])
     eng = ins.itemById('engrave').value
     ins.itemById('pass_numbers').isEnabled = eng
