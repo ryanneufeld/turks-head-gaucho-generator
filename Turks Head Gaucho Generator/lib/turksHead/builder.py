@@ -663,11 +663,11 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
             note('Pin storage cavity')
 
     # One clamp notch per cord, where that cord's first descending strand, run
-    # on up past its top bight, meets the shoulder. Each notch is slanted along
-    # the strand, so the cord lies straight from the notch into its lane, and
-    # has a round floor. It runs from the axis out (into the storage cavity)
-    # and up through the spigot, so the cords drop in from the top and the lid
-    # clamps them on the shoulder.
+    # on up past its top bight, meets the shoulder, so the cord lies straight
+    # from its notch down into its lane. Each is a vertical slot with a round
+    # floor, from the axis out (into the storage cavity) and up through the
+    # spigot, so the cords drop in from the top and the lid clamps them on
+    # the shoulder.
     bands = lane_layout(p)[3]
     lanes = [b[1] for b in bands] if bands else [0.0]
     tools = []
@@ -678,31 +678,22 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
         else:
             angles = [cleat_alignment(p, R, H, L, B, z0, offset=o, z_exit=zs)[0]
                       for o in lanes]
-        su = R * L * math.pi / B
-        m = math.hypot(su, H)
-        up_u, up_z = -su / m, H / m                      # up the strand, away from the knot
         width = cd * 1.1
         rw = width / 2.0
         depth_notch = cd * (1.0 - CLAMP_SQUEEZE)         # lid squeezes the cords
         zc = zs - depth_notch + rw                       # centre of the round floor
         z_hi = zs + Lt + 0.1
         r_out = R + 0.1
-        ln = (z_hi - zc) / up_z + rw                     # slot length along the strand
         tbm = adsk.fusion.TemporaryBRepManager.get()
         U = adsk.fusion.BooleanTypes.UnionBooleanType
         parts = []
         for th in angles:
             c, s_ = math.cos(th), math.sin(th)
-            e = (c, s_, 0.0)
-            t = (-s_, c, 0.0)
-            along = adsk.core.Vector3D.create(up_u * t[0], up_u * t[1], up_z)
-            across = adsk.core.Vector3D.create(up_z * t[0], up_z * t[1], -up_u)
             floor = tbm.createCylinderOrCone(_pt(0, 0, zc), rw, _pt(r_out * c, r_out * s_, zc), rw)
             mid = r_out / 2.0
-            ctr = _pt(mid * c + along.x * ln / 2.0, mid * s_ + along.y * ln / 2.0,
-                      zc + along.z * ln / 2.0)
             box = adsk.core.OrientedBoundingBox3D.create(
-                ctr, adsk.core.Vector3D.create(*e), along, r_out, ln, width)
+                _pt(mid * c, mid * s_, (zc + z_hi) / 2.0), adsk.core.Vector3D.create(c, s_, 0),
+                adsk.core.Vector3D.create(-s_, c, 0), r_out, width, z_hi - zc)
             tbm.booleanOperation(floor, tbm.createBox(box), U)
             parts.append(floor)
         tool, left = _union_tree(tbm, parts)

@@ -64,8 +64,8 @@ number_depth = 0.8;
 /* [Lid] */
 // Screw-on lid with pin storage
 lid = true;
+// Coarse round bottle-style thread (3 mm pitch)
 thread_len = 6;
-thread_pitch = 2;
 // Radial play between lid and spigot threads
 thread_clearance = 0.3;
 pin_storage = true;
@@ -87,7 +87,11 @@ CLAMP_SQUEEZE = 0.3;
 STORAGE_FLOOR = 3;
 NUM_GAP = 0.8;
 COLOURS = ["royalblue", "crimson", "forestgreen", "gold", "purple", "darkcyan"];
-ISO = [12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 42, 45, 48, 52, 56, 60, 64, 68, 72, 76, 80];
+THREAD_PITCH = 3;     // bottle-style: round profile, prints upright
+THREAD_DEPTH = 1.1;   // crest above the spigot core
+THREAD_ROPE = 0.8;    // radius of the round thread profile
+LID_MIN_WALL = 2.5;
+CAVITY_WALL = 2;
 
 // ---------------------------------------------------------------- knot model
 L = leads;
@@ -138,7 +142,8 @@ function pitch_of(d, h) = circ(d) / B * h / norm([su_of(d), h]);
 function dia_ok(d) =
     N == 1 ? W <= (circ(d) / B - 2 * hr - 0.4) / 2
            : circ(d) / (B * N) >= 2 * (rho + cord_d / 2) + 0.4;
-function thread_d(d) = let(c = [for (s = ISO) if (s <= d - 5 * cord_d) s]) len(c) ? c[len(c) - 1] : 0;
+// thread crest diameter: leaves a clamp shoulder of 2.5 cord widths, whole mm
+function thread_d(d) = let(t = floor(d - 2 * max(2.5 * cord_d, LID_MIN_WALL) + 1e-6)) t >= 12 ? t : 0;
 function grid_ok(d, h) = N < 2 ? true :
     let(s = su_of(d), m = norm([s, h]), dp = rho / sin(atan2(s, h)), zf = dp * pow(h / m, 2))
     h / (N * L) >= zf + cord_d / 2;
@@ -278,35 +283,52 @@ module labels(m = -1) {
 
 // ---------------------------------------------------------------- lid & thread
 zs = top_edge + LID_GAP;            // shoulder: top of the jig body, lid sits here
-TD = lid ? thread_d(D) : 0;
-e_thr = 0.3 * thread_pitch;         // thread = twisted eccentric circle, depth 0.6 * pitch
-r_minor = TD / 2 - 2 * e_thr;
-rc_store = min(r_minor - 2, R - pin_depth - 2);
+TD = lid ? thread_d(D) : 0;         // thread crest diameter
+r_core = TD / 2 - THREAD_DEPTH;     // spigot core
+r_helix = r_core + THREAD_DEPTH - THREAD_ROPE;
+rc_store = min(r_core - CAVITY_WALL, R - pin_depth - CAVITY_WALL);
+LID_H = thread_len + LID_CAP;
 
-module thread(r_major, h) {
-    linear_extrude(height = h, twist = -360 * h / thread_pitch,
-                   slices = max(8, ceil(h / thread_pitch * 24)), convexity = 6)
-        translate([e_thr, 0]) circle(r = r_major - e_thr, $fn = 48);
+// round-profile thread: spheres hulled along a helix (one helix shared by the
+// spigot thread and the lid groove, starting at angle 0)
+module helix_rope(z0, z1, rope) {
+    turns = (z1 - z0) / THREAD_PITCH;
+    n = max(8, ceil(turns * 36));
+    pts = [for (i = [0:n]) let(t = turns * i / n, a = 360 * t)
+              [r_helix * cos(a), r_helix * sin(a), z0 + THREAD_PITCH * t]];
+    for (i = [0:n - 1]) hull() {
+        translate(pts[i]) sphere(r = rope, $fn = 16);
+        translate(pts[i + 1]) sphere(r = rope, $fn = 16);
+    }
 }
 
 module spigot() {
-    lead = 0.6 * thread_pitch + 0.2;
-    translate([0, 0, zs - 0.01])
-        intersection() {
-            thread(TD / 2, thread_len + 0.01);
-            cylinder(r1 = TD / 2 + thread_len, r2 = TD / 2 - lead + 0.01, h = thread_len + 0.01);
-        }
+    lead = 0.5;
+    translate([0, 0, zs - 0.01]) hull() {
+        cylinder(r = r_core, h = thread_len - lead + 0.01);
+        cylinder(r = r_core - lead, h = thread_len + 0.01);
+    }
+    e = THREAD_ROPE + 0.2;
+    intersection() {
+        helix_rope(zs + e, zs + thread_len - e, THREAD_ROPE);
+        translate([0, 0, zs]) cylinder(r = TD, h = thread_len);
+    }
 }
 
-notch_th = (su + (shift(0) + shift(N - 1)) / 2) / R * 180 / PI;
-notch_w = abs(shift(N - 1) - shift(0)) + cord_d + 1;
+// one notch per cord, where its first descending strand (from top bight 1),
+// run on upward, meets the shoulder, so the cord lies straight from its notch
+// down into its lane; vertical slot with a round floor
+up_dir = [-su, H] / segm;           // up the strand, unrolled (u, z)
+function exit_u(m) = su + shift(m) + up_dir[0] * (zs - (z0 + H)) / up_dir[1];
 module clamp_notch() {
-    rw = notch_w / 2;
+    w = cord_d * 1.1;
+    rw = w / 2;
     zc = zs - cord_d * (1 - CLAMP_SQUEEZE) + rw;
-    rotate([0, 0, notch_th]) {
-        translate([0, 0, zc]) rotate([0, 90, 0]) cylinder(r = rw, h = R + 2, $fn = 48);
-        translate([0, -rw, zc]) cube([R + 2, 2 * rw, thread_len + LID_CAP + 10]);
-    }
+    for (m = [0:N - 1])
+        rotate([0, 0, exit_u(m) / R * 180 / PI]) {
+            translate([0, 0, zc]) rotate([0, 90, 0]) cylinder(r = rw, h = R + 2, $fn = 32);
+            translate([0, -rw, zc]) cube([R + 2, w, thread_len + LID_CAP + 10]);
+        }
 }
 
 module storage() {
@@ -314,23 +336,30 @@ module storage() {
         translate([0, 0, -handle_len + STORAGE_FLOOR]) cylinder(r = rc_store, h = zs + thread_len + handle_len + 1);
 }
 
-module lid_part() {
-    hl = thread_len + LID_CAP;
-    lead = 0.6 * thread_pitch + 0.2;
+// the lid where it sits on the jig (zs .. zs + LID_H)
+module lid_in_place() {
     n = max(8, round(2 * PI * R / 7));
-    dep = min(0.9, (R - TD / 2) / 3);
-    // printed top down: closed cap at z = 0, threaded bore opening upward
+    dep = min(0.9, (R - TD / 2 - thread_clearance) / 3);
+    e = THREAD_ROPE + 0.2;
     difference() {
-        hull() {
-            cylinder(r = R - chamfer, h = 0.01);
-            translate([0, 0, chamfer]) cylinder(r = R, h = hl - chamfer);
+        translate([0, 0, zs]) hull() {
+            cylinder(r = R, h = LID_H - chamfer);
+            cylinder(r = R - chamfer, h = LID_H);
         }
-        translate([0, 0, LID_CAP]) thread(TD / 2 + thread_clearance, thread_len + 0.01);
-        translate([0, 0, hl - lead]) cylinder(r1 = TD / 2 + thread_clearance - 2 * e_thr,
-                                              r2 = TD / 2 + thread_clearance + 0.5, h = lead + 0.01);
+        translate([0, 0, zs - 1]) cylinder(r = r_core + thread_clearance, h = thread_len + 1);
+        // mouth lead-in
+        translate([0, 0, zs - 0.01]) cylinder(r1 = r_core + thread_clearance + 0.5,
+                                              r2 = r_core + thread_clearance, h = 0.5);
+        // groove: same helix, with clearance, a turn past the mouth
+        helix_rope(zs + e - THREAD_PITCH, zs + thread_len - e + 0.1, THREAD_ROPE + thread_clearance);
         for (i = [0:n - 1]) rotate([0, 0, 360 * i / n])
-            translate([R + 1.5 - dep, 0, -1]) cylinder(r = 1.5, h = hl + 2, $fn = 24);
+            translate([R + 1.5 - dep, 0, zs - 1]) cylinder(r = 1.5, h = LID_H + 2, $fn = 24);
     }
+}
+
+// printed top down beside the jig (a rotation, so the thread keeps its hand)
+module lid_part() {
+    translate([0, 0, LID_H]) rotate([180, 0, 0]) translate([0, 0, -zs]) lid_in_place();
 }
 
 // ---------------------------------------------------------------- jig
