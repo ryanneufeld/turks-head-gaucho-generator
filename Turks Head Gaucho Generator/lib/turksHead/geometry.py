@@ -28,8 +28,12 @@ LID_MIN_WALL = 0.25       # lid wall outside the thread
 CLAMP_SQUEEZE = 0.3       # notch depth = cord diameter x (1 - this): lid squeezes the cord
 CAVITY_WALL = 0.2         # wall left around the pin storage cavity
 STORAGE_FLOOR = 0.3       # solid floor left under the pin storage cavity
-THREAD_PITCH_PREF = 0.2   # preferred thread pitch (2 mm)
-ISO_SIZES_MM = (12, 14, 16, 18, 20, 22, 24, 27, 30, 33, 36, 39, 42, 45, 48, 52, 56, 60, 64)
+# lid thread: coarse round-profile thread like a drinks bottle, made for
+# FDM printing (prints upright with no steep overhangs, tolerant of ooze)
+THREAD_PITCH = 0.3        # 3 mm per turn
+THREAD_DEPTH = 0.11       # crest height above the spigot core (1.1 mm)
+THREAD_ROPE = 0.08        # radius of the round thread profile (0.8 mm)
+THREAD_MIN_DIA = 1.2      # smallest crest diameter (12 mm)
 END_MARGIN = 2.54  # knot span = mandrel length minus this (1 in), centred
 
 # ---------------------------------------------------------------- geometry (pure)
@@ -964,16 +968,15 @@ def lid_split(p, R, H, L, B, z0):
 
 
 def lid_thread(p):
-    """(nominal diameter cm, metric size mm) of the spigot thread: the largest
-    ISO size that leaves a clamp shoulder at least 2.5 cord diameters wide
-    and a lid wall of LID_MIN_WALL."""
+    """(crest diameter cm, crest diameter mm) of the spigot thread: as large as
+    leaves a clamp shoulder at least 2.5 cord diameters wide and a lid wall of
+    LID_MIN_WALL, rounded down to whole mm."""
     R = p['dia'] / 2.0
     shoulder = max(2.5 * p['cord_d'], LID_MIN_WALL)
-    target_mm = 2 * (R - shoulder) * 10
-    sizes = [s for s in ISO_SIZES_MM if s <= target_mm]
-    if not sizes:
+    d_mm = int(math.floor(2 * (R - shoulder) * 10 + 1e-6))
+    if d_mm < THREAD_MIN_DIA * 10:
         return None, None
-    return sizes[-1] / 10.0, sizes[-1]
+    return d_mm / 10.0, d_mm
 
 
 def cavity_radius(p):
@@ -983,7 +986,7 @@ def cavity_radius(p):
     if d is None:
         return 0.0
     R = p['dia'] / 2.0
-    minor = d - 1.0825 * THREAD_PITCH_PREF
+    minor = d - 2 * THREAD_DEPTH
     r = min(minor / 2.0 - CAVITY_WALL, R - p['hole_depth'] - CAVITY_WALL)
     if p.get('handle_len', 0) > 0 and p.get('handle_dia', 0) > 0:
         r = min(r, p['handle_dia'] / 2.0 - CAVITY_WALL)   # thinner handle

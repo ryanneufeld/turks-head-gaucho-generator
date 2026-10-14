@@ -524,36 +524,29 @@ def _cyl_face(body, r, z_lo, z_hi):
     return best
 
 
-def _pick_thread(size_mm):
-    """(type, designation, pitch cm, ext class, int class) for an ISO metric
-    size, choosing the pitch closest to THREAD_PITCH_PREF."""
-    tq = _app.activeProduct.rootComponent.features.threadFeatures.threadDataQuery
-    ttype = 'ISO Metric profile'
-    size = None
-    for s in tq.allSizes(ttype):
-        try:
-            if abs(float(s) - size_mm) < 1e-6:
-                size = s
-        except ValueError:
-            pass
-    if size is None:
-        raise RuntimeError('No ISO metric thread size {} mm'.format(size_mm))
-    best = None
-    for d in tq.allDesignations(ttype, size):
-        try:
-            pitch = float(d.lower().split('x')[1]) / 10.0
-        except (IndexError, ValueError):
-            continue
-        if best is None or abs(pitch - THREAD_PITCH_PREF) < abs(best[1] - THREAD_PITCH_PREF):
-            best = (d, pitch)
-    if best is None:
-        raise RuntimeError('No designation for M{}'.format(size_mm))
-
-    def cls(internal):
-        cs = list(tq.allClasses(internal, ttype, best[0]))
-        want = '6H' if internal else '6g'
-        return want if want in cs else cs[0]
-    return ttype, best[0], best[1], cls(False), cls(True)
+def _helix_pipe(comp, r, z0, z1, rope, name):
+    """Round-section thread body: a pipe of radius `rope` along a helix of
+    radius r and THREAD_PITCH from z0 to z1 (starting at angle 0, so the
+    spigot thread and the lid groove share one helix)."""
+    sk = comp.sketches.add(comp.xYConstructionPlane)
+    sk.name = name + ' helix'
+    sk.isComputeDeferred = True
+    turns = (z1 - z0) / THREAD_PITCH
+    n = max(8, int(math.ceil(turns * 36)))
+    coll = adsk.core.ObjectCollection.create()
+    for i in range(n + 1):
+        t = turns * i / n
+        a = 2 * math.pi * t
+        coll.add(_pt(r * math.cos(a), r * math.sin(a), z0 + THREAD_PITCH * t))
+    sp = sk.sketchCurves.sketchFittedSplines.add(coll)
+    sk.isComputeDeferred = False
+    sk.isVisible = False
+    feats = comp.features
+    pi = feats.pipeFeatures.createInput(feats.createPath(sp, False), NEW)
+    pi.sectionSize = adsk.core.ValueInput.createByReal(2 * rope)
+    body = feats.pipeFeatures.add(pi).bodies.item(0)
+    body.name = name
+    return body
 
 
 def _build_lid(comp, p, R, H, L, B, z0, parametric):
@@ -566,11 +559,11 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
     zs = lid_split(p, R, H, L, B, z0)
     Lt = p['thread_len']
     cd = p['cord_d']
-    d_nom, size_mm = lid_thread(p)
-    ttype, desig, pitch, cls_ext, cls_int = _pick_thread(size_mm)
-    rs = d_nom / 2.0
-    r_bore = (d_nom - 1.0825 * pitch) / 2.0      # internal thread minor radius
-
+    d_crest, _ = lid_thread(p)
+    clr = max(0.0, p.get('thread_clearance', 0.0))
+    rs = d_crest / 2.0 - THREAD_DEPTH            # spigot core
+    r_bore = rs + clr                            # lid bore
+    r_helix = rs + THREAD_DEPTH - THREAD_ROPE    # centre of the round thread
     plane = _plane_at(comp, zs)
     # spigot (part of the jig)
     sk = comp.sketches.add(plane)
@@ -615,7 +608,7 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
 
     # thread lead-ins: chamfer the spigot's top outer edge and the mouth of
     # the lid bore so the lid starts easily
-    lead = min(0.6 * pitch + 0.02, Lt / 3.0)
+    lead = min(0.05, Lt / 6.0)
 
     def _circle_edges(body, r, z):
         out = adsk.core.ObjectCollection.create()
@@ -636,35 +629,23 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
         except Exception:
             note(stage)
 
-    # threads: modeled ISO metric, external on the spigot, internal in the lid
-    tf = feats.threadFeatures
-    made = []
-    for body, r, internal, cls in ((_jig_body(comp), rs, False, cls_ext),
-                                   (comp.bRepBodies.itemByName('Lid'), r_bore, True, cls_int)):
-        try:
-            face = _cyl_face(body, r, zs, zs + Lt)
-            if face is None:
-                raise RuntimeError('thread face not found')
-            faces = adsk.core.ObjectCollection.create()
-            faces.add(face)
-            ti = tf.createInput(faces, tf.createThreadInfo(internal, ttype, desig, cls))
-            ti.isModeled = True
-            ti.isFullLength = True
-            made.append(tf.add(ti))
-        except Exception:
-            note('{} thread {}'.format('Internal' if internal else 'External', desig))
-    # print clearance: pull both thread surfaces back by half the clearance each
-    clr = p.get('thread_clearance', 0.0)
-    if clr > 0 and made:
-        # createInput wants a plain list of faces; one thread at a time so a
-        # failure on one doesn't cost the other its clearance
-        for t in made:
-            try:
-                faces = [f for f in t.faces]
-                oi = feats.offsetFacesFeatures.createInput(faces, VR(-clr / 2.0))
-                feats.offsetFacesFeatures.add(oi)
-            except Exception:
-                note('Thread print clearance (use slicer hole/contour compensation instead)')
+    # threads: one round-profile helix, raised on the spigot and cut (with
+    # clearance) into the lid. The lid groove runs a turn past the lid's mouth
+    # so the spigot thread can enter it.
+    end = THREAD_ROPE + 0.02
+    try:
+        t = _helix_pipe(comp, r_helix, zs + end, zs + Lt - end, THREAD_ROPE, 'Spigot thread')
+        if not _combine(comp, _jig_body(comp), [t], JOIN, keep=False, stage='Spigot thread'):
+            note('Spigot thread join')
+    except Exception:
+        note('Spigot thread')
+    try:
+        g = _helix_pipe(comp, r_helix, zs + end - THREAD_PITCH, zs + Lt - end + 0.01,
+                        THREAD_ROPE + clr, 'Lid thread groove')
+        _combine(comp, comp.bRepBodies.itemByName('Lid'), [g], CUT, keep=False,
+                 stage='Lid thread groove')
+    except Exception:
+        note('Lid thread groove')
 
     # pin storage cavity, down through the spigot into the mandrel core
     rc = cavity_radius(p)
@@ -681,12 +662,12 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
         except Exception:
             note('Pin storage cavity')
 
-    # ONE clamp notch for all cords, centred where the lanes' first descending
-    # strands, run straight up from their top bight, meet the shoulder. U-shaped
-    # (round floor) and wide enough for every cord side by side, so there is no
-    # thin wall between cords. It runs from outside the mandrel into the storage
-    # cavity and up through the spigot, so the cords drop in from the top and the
-    # lid clamps them on the shoulder.
+    # One clamp notch per cord, where that cord's first descending strand, run
+    # on up past its top bight, meets the shoulder. Each notch is slanted along
+    # the strand, so the cord lies straight from the notch into its lane, and
+    # has a round floor. It runs from the axis out (into the storage cavity)
+    # and up through the spigot, so the cords drop in from the top and the lid
+    # clamps them on the shoulder.
     bands = lane_layout(p)[3]
     lanes = [b[1] for b in bands] if bands else [0.0]
     tools = []
@@ -697,33 +678,39 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
         else:
             angles = [cleat_alignment(p, R, H, L, B, z0, offset=o, z_exit=zs)[0]
                       for o in lanes]
-        a0 = angles[0]
-        rel = [math.atan2(math.sin(a - a0), math.cos(a - a0)) for a in angles]  # unwrap
-        th = a0 + (max(rel) + min(rel)) / 2.0
-        width = (max(rel) - min(rel)) * R + cd          # all cords side by side
+        su = R * L * math.pi / B
+        m = math.hypot(su, H)
+        up_u, up_z = -su / m, H / m                      # up the strand, away from the knot
+        width = cd * 1.1
         rw = width / 2.0
         depth_notch = cd * (1.0 - CLAMP_SQUEEZE)         # lid squeezes the cords
         zc = zs - depth_notch + rw                       # centre of the round floor
         z_hi = zs + Lt + 0.1
-        # from the axis out, so the whole width opens into the cavity (a flat
-        # inner face at the cavity radius left walls at the sides of wide notches)
-        r_in, r_out = 0.0, R + 0.1
-        c, s_ = math.cos(th), math.sin(th)
+        r_out = R + 0.1
+        ln = (z_hi - zc) / up_z + rw                     # slot length along the strand
         tbm = adsk.fusion.TemporaryBRepManager.get()
-        floor = tbm.createCylinderOrCone(_pt(r_in * c, r_in * s_, zc), rw,
-                                         _pt(r_out * c, r_out * s_, zc), rw)
-        if z_hi > zc:
-            mid = (r_in + r_out) / 2.0
+        U = adsk.fusion.BooleanTypes.UnionBooleanType
+        parts = []
+        for th in angles:
+            c, s_ = math.cos(th), math.sin(th)
+            e = (c, s_, 0.0)
+            t = (-s_, c, 0.0)
+            along = adsk.core.Vector3D.create(up_u * t[0], up_u * t[1], up_z)
+            across = adsk.core.Vector3D.create(up_z * t[0], up_z * t[1], -up_u)
+            floor = tbm.createCylinderOrCone(_pt(0, 0, zc), rw, _pt(r_out * c, r_out * s_, zc), rw)
+            mid = r_out / 2.0
+            ctr = _pt(mid * c + along.x * ln / 2.0, mid * s_ + along.y * ln / 2.0,
+                      zc + along.z * ln / 2.0)
             box = adsk.core.OrientedBoundingBox3D.create(
-                _pt(mid * c, mid * s_, (zc + z_hi) / 2.0), adsk.core.Vector3D.create(c, s_, 0),
-                adsk.core.Vector3D.create(-s_, c, 0), r_out - r_in, width, z_hi - zc)
-            tbm.booleanOperation(floor, tbm.createBox(box),
-                                 adsk.fusion.BooleanTypes.UnionBooleanType)
-        nb = _add_temp_body(comp, floor, 'Notch tool', parametric)
-        _combine(comp, _jig_body(comp), [nb], CUT, keep=False, stage='Clamp notch')
+                ctr, adsk.core.Vector3D.create(*e), along, r_out, ln, width)
+            tbm.booleanOperation(floor, tbm.createBox(box), U)
+            parts.append(floor)
+        tool, left = _union_tree(tbm, parts)
+        nbs = [_add_temp_body(comp, b_, 'Notch tool', parametric) for b_ in [tool] + left]
+        _combine(comp, _jig_body(comp), nbs, CUT, keep=False, stage='Clamp notches')
     except Exception:
-        note('Clamp notch')
-    _scallop_lid(comp, R, rs, zs, zs + Lt + LID_CAP, parametric)
+        note('Clamp notches')
+    _scallop_lid(comp, R, d_crest / 2.0 + clr, zs, zs + Lt + LID_CAP, parametric)
     _place_lid(comp, zs + Lt + LID_CAP, R)
     return tools
 

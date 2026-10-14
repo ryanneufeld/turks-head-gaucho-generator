@@ -109,7 +109,7 @@ def problems(p):
     if p['top_mode'] == 'lid':
         if lid_thread(p)[0] is None:
             errs.append('Diameter too small for a screw-on lid with this cord '
-                        '(needs room for a clamp shoulder and an M12+ thread).')
+                        '(needs room for a clamp shoulder and a 12 mm thread).')
         if p['thread_len'] < 0.4:
             errs.append('Lid thread length must be at least 4 mm.')
         if p['thread_clearance'] < 0 or p['thread_clearance'] > 0.1:
@@ -193,8 +193,10 @@ def info_text(p):
     if p['top_mode'] == 'lid':
         d, size = lid_thread(p)
         rc = cavity_radius(p)
-        txt += '<br>Lid: M{} thread (pitch nearest 2 mm), one clamp notch for {} cord{}'.format(
-            size, passes_of(p), 's' if passes_of(p) > 1 else '')
+        n_ = passes_of(p)
+        txt += '<br>Lid: {} mm bottle-style thread ({:g} mm pitch), {}'.format(
+            size, THREAD_PITCH * 10,
+            'a clamp notch per cord' if n_ > 1 else 'one clamp notch')
         sd = storage_depth(p, R, p['span'], L, B, END_MARGIN / 2.0)
         if not p['storage']:
             txt += '<br>Pin storage: off'
