@@ -20,6 +20,7 @@ _ui = _app.userInterface
 _building_occ = None
 errors = []  # non-fatal problems collected during a build (shown in debug mode)
 timings = []  # (stage, seconds) for the debug report
+diag = []    # piece-count checks for the debug report
 _t0 = [0.0]
 
 
@@ -29,6 +30,13 @@ def lap(stage):
     if _t0[0]:
         timings.append((stage, now - _t0[0]))
     _t0[0] = now
+
+
+def _lumps(body):
+    try:
+        return body.lumps.count
+    except Exception:
+        return -1
 
 
 def note(stage):
@@ -360,6 +368,7 @@ def _engrave_solid(comp, paths, boxes, r, name, R, z_lo, z_hi, parametric, keep=
                 continue
             clipped = tbm.copy(c)
             ok = True
+            n_clip = _lumps(c)
             for spec in boxes[i]:
                 if spec[0] == 'ring':
                     bx = _ring_cutter(tbm, R, *spec[1:])
@@ -379,6 +388,11 @@ def _engrave_solid(comp, paths, boxes, r, name, R, z_lo, z_hi, parametric, keep=
                 c, ok = clipped, False
             if not ok:
                 note('{} trim {}'.format(name, i + 1))
+            want = 1 + sum(1 for s_ in boxes[i] if s_[0] != 'ring')
+            got_ = _lumps(c)
+            if got_ != want:
+                diag.append('{} path {}: {} piece(s), expected {} (after clip {})'.format(
+                    name, i + 1, got_, want, n_clip))
             pieces.append(c)
         prog.progressValue = i + 1
         if i % 5 == 4:
@@ -391,10 +405,14 @@ def _engrave_solid(comp, paths, boxes, r, name, R, z_lo, z_hi, parametric, keep=
         except Exception:
             for b in f.bodies:
                 _discard(comp, b)
+    n_in = sum(max(0, _lumps(c)) for c in pieces)
     u, left = _union_tree(tbm, pieces)
     prog.hide()
     if u is None:
         return None
+    n_out = _lumps(u) + sum(max(0, _lumps(b)) for b in left)
+    diag.append('{}: {} pieces in, {} after union ({} body/bodies)'.format(
+        name, n_in, n_out, 1 + len(left)))
     if keep == 'tbm':
         return [u] + left            # caller places them
     bodies = [_add_temp_body(comp, u, name, parametric)]
@@ -893,6 +911,7 @@ def _place_lid(comp, z_top, R):
 
 def build(p, transform=None):
     del errors[:]
+    del diag[:]
     design = adsk.fusion.Design.cast(_app.activeProduct)
     if not design:
         _app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
@@ -1109,7 +1128,10 @@ def build(p, transform=None):
                     # cut in memory
                     if pin_tbm is not None:
                         for g in got:
-                            _tbm_op(tbm_, g, tbm_.copy(pin_tbm), DIFF)
+                            n0 = _lumps(g)
+                            okp = _tbm_op(tbm_, g, tbm_.copy(pin_tbm), DIFF)
+                            diag.append('{}: pin holes {} -> {} pieces{}'.format(
+                                name, n0, _lumps(g), '' if okp else ' (FAILED)'))
                     sub = comp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
                     sub.component.name = name
                     for g in got:
@@ -1281,4 +1303,6 @@ def run_build(p, edit_occ=None):
     out = list(errors)
     if p.get('debug') and timings:
         out.append('Timings: ' + ', '.join('{} {:.1f}s'.format(n, t) for n, t in timings))
+    if p.get('debug') and diag:
+        out.append('Pieces:\n' + '\n'.join(diag))
     return out
