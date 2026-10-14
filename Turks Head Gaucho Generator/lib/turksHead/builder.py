@@ -696,6 +696,25 @@ def _build_lid(comp, p, R, H, L, B, z0, parametric):
                 adsk.core.Vector3D.create(-s_, c, 0), r_out, width, z_hi - zc)
             tbm.booleanOperation(floor, tbm.createBox(box), U)
             parts.append(floor)
+        if len(angles) > 1:
+            # clear the spigot between the outer notches: the narrow stubs of
+            # spigot left between neighbouring slots would just snap off
+            a0 = angles[0]
+            rel = [math.atan2(math.sin(a - a0), math.cos(a - a0)) for a in angles]
+            r_cut = d_crest / 2.0 + clr + 0.05
+            pad = math.asin(min(1.0, rw / max(rs - 0.3, rw)))
+            lo, hi = a0 + min(rel) - pad, a0 + max(rel) + pad
+            S = 2 * R + 1.0
+            sector = tbm.createCylinderOrCone(_pt(0, 0, zs), r_cut, _pt(0, 0, z_hi), r_cut)
+            I = adsk.fusion.BooleanTypes.IntersectionBooleanType
+            for ang, side in ((lo, 1.0), (hi, -1.0)):
+                n = (-math.sin(ang) * side, math.cos(ang) * side)
+                half = adsk.core.OrientedBoundingBox3D.create(
+                    _pt(n[0] * S / 2.0, n[1] * S / 2.0, (zs + z_hi) / 2.0),
+                    adsk.core.Vector3D.create(math.cos(ang), math.sin(ang), 0),
+                    adsk.core.Vector3D.create(n[0], n[1], 0), 2 * S, S, z_hi - zs + 0.2)
+                tbm.booleanOperation(sector, tbm.createBox(half), I)
+            parts.append(sector)
         tool, left = _union_tree(tbm, parts)
         nbs = [_add_temp_body(comp, b_, 'Notch tool', parametric) for b_ in [tool] + left]
         _combine(comp, _jig_body(comp), nbs, CUT, keep=False, stage='Clamp notches')

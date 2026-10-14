@@ -329,6 +329,17 @@ module clamp_notch() {
             translate([0, 0, zc]) rotate([0, 90, 0]) cylinder(r = rw, h = R + 2, $fn = 32);
             translate([0, -rw, zc]) cube([R + 2, w, thread_len + LID_CAP + 10]);
         }
+    // clear the spigot between the outer notches (the stubs left between
+    // neighbouring slots would just snap off)
+    if (N > 1) {
+        pad = asin(min(1, rw / max(r_core - 3, rw)));
+        a_lo = exit_u(0) / R * 180 / PI - pad;
+        a_hi = exit_u(N - 1) / R * 180 / PI + pad;
+        lo = min(a_lo, a_hi);
+        translate([0, 0, zs]) rotate([0, 0, lo])
+            rotate_extrude(angle = abs(a_hi - a_lo), $fn = 120)
+                square([TD / 2 + thread_clearance + 0.5, thread_len + 1]);
+    }
 }
 
 module storage() {
