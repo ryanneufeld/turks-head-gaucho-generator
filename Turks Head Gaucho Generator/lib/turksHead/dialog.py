@@ -13,7 +13,8 @@ DEBUG_DEFAULT = False
 
 
 def read_inputs(inputs):
-    v = lambda i: inputs.itemById(i).value
+    def v(i):
+        return inputs.itemById(i).value
     p = {
         'line_w': v('line_w'), 'line_d': v('line_d'),
         'dia': v('dia'), 'length': v('length'),
@@ -100,9 +101,9 @@ def problems(p):
                             'Gaucho interweave (already over 2 / under 2) or Followed passes.'))
     elif p['over_under'] and not code_consistent(L, B, code):
         ok = consistent_leads(B, code, 2, 25)
-        errs.append('This weave does not close on {}L × {}B (some crossings would need '
-                    'both cords on top). With {} bights try {} leads.'.format(
-                        L, B, B, ', '.join(str(x) for x in ok[:6]) or 'other'))
+        errs.append('This weave does not close on {l}L × {b}B (some crossings would need '
+                    'both cords on top). With {b} bights try {ok} leads.'.format(
+                        l=L, b=B, ok=', '.join(str(x) for x in ok[:6]) or 'other'))
     if p['length'] <= END_MARGIN:
         errs.append('Mandrel length must be more than 25.4 mm.')
     elif p.get('max_height', 0) > 0 and knot_valid(L, B) \
@@ -123,7 +124,7 @@ def problems(p):
         errs.append('Bore must be smaller than diameter.')
     if p['handle_len'] < 0:
         errs.append('Handle length must be ≥ 0.')
-    if p['handle_len'] > 0 and p['handle_dia'] > 0 and p['handle_dia'] <= p['bore'] + 0.2:
+    if p['handle_len'] > 0 and 0 < p['handle_dia'] <= p['bore'] + 0.2:
         errs.append('Handle diameter must exceed bore by at least 2 mm.')
     if p['cord_d'] <= 0:
         errs.append('Cord diameter must be > 0.')
@@ -177,8 +178,8 @@ def problems(p):
         errs.append('Pin hole diameter must be > 0.')
     if p['chamfer'] < 0 or p['chamfer'] >= (p['dia'] - p['bore']) / 2.0:
         errs.append('Chamfer too large.')
-    if (knot_valid(L, B) and p['span'] > 0 and L >= 2 and passes_of(p) < 2
-            and (p['bight_holes'] or p['hole_mode'] in ('turn', 'vertex'))):
+    pins_by_vertex = p['bight_holes'] or p['hole_mode'] in ('turn', 'vertex')
+    if knot_valid(L, B) and p['span'] > 0 and passes_of(p) < 2 <= L and pins_by_vertex:
         d = vertex_offset(R, p['span'], L, B, pin_clear(p, R, p['span'], L, B))
         if d >= p['span'] / L * 0.9:
             errs.append('Pins beside vertices would reach the next crossing row: '
@@ -193,8 +194,8 @@ def info_text(p):
     errs = problems(p)
     if errs:
         return '<b>Check:</b><br>' + '<br>'.join(errs)
-    um = _app.activeProduct.unitsManager if adsk.fusion.Design.cast(_app.activeProduct) else None
-    fmt = lambda x: '{:.1f} mm'.format(x * 10)
+    def fmt(x):
+        return '{:.1f} mm'.format(x * 10)
     L, B = p['leads'], p['bights']
     R = p['dia'] / 2.0
     n = passes_of(p)
@@ -229,7 +230,7 @@ def info_text(p):
                 '(B1, C1, …) along its own lane. Every colour has bight pins; '
                 'over/under is shown by where the lanes stop.'.format(n, letters))
     if p['top_mode'] == 'lid':
-        d, size = lid_thread(p)
+        _, size = lid_thread(p)
         rc = cavity_radius(p)
         n_ = passes_of(p)
         txt += '<br>Lid: {} mm bottle-style thread ({:g} mm pitch), {}'.format(

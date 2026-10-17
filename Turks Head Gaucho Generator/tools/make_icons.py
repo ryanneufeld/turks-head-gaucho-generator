@@ -3,7 +3,9 @@
 Usage: python3 mkicon3.py OUTDIR
 Writes OUTDIR/AddInIcon.svg and OUTDIR/{new,edit}/{16x16,32x32,64x64}[.png|@2x.png]
 """
-import math, os, sys
+import math
+import os
+import sys
 
 L, B = 5, 3
 ROPE, ROPE_EDGE = '#C8832E', '#3E2410'
@@ -79,11 +81,12 @@ def svg(size, badge=False):
             f'viewBox="0 0 64 64">\n{g}\n{extra}\n</svg>\n')
 
 
-if __name__ == '__main__':
+def main():
     import cairosvg
     out = sys.argv[1]
     os.makedirs(out, exist_ok=True)
-    open(os.path.join(out, 'AddInIcon.svg'), 'w').write(svg(64))
+    with open(os.path.join(out, 'AddInIcon.svg'), 'w', encoding='utf-8') as f:
+        f.write(svg(64))
     for badge, name in ((False, 'new'), (True, 'edit')):
         d = os.path.join(out, name)
         os.makedirs(d, exist_ok=True)
@@ -94,3 +97,7 @@ if __name__ == '__main__':
                 cairosvg.svg2png(bytestring=svg(px * 2, badge).encode(),
                                  write_to=f'{d}/{px}x{px}@2x.png',
                                  output_width=px * 2, output_height=px * 2)
+
+
+if __name__ == '__main__':
+    main()

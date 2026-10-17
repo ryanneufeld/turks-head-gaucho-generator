@@ -142,7 +142,7 @@ def pass_over(t_self, up_self, t_other, row, weaves):
     a pass of type t_other at crossing row `row`?
     Same-type crossings follow that type's weave. A base/gaucho crossing
     follows the gaucho weave, seen from the gaucho pass."""
-    if t_self == t_other or t_self == 'g':
+    if t_self in (t_other, 'g'):
         f = up_over(row, weaves[t_self])
         return f if up_self else not f
     f = up_over(row, weaves['g'])          # other is the gaucho pass
@@ -268,7 +268,7 @@ def knot_paths(R, H, z0, L, B, offsets, rho, depth, over_under,
     def unders(j):
         """(C, do, f_lo, f_hi) windows where the current line is under.
         f = (P - C) x do is minus the other strand's offset coordinate."""
-        up = (j % 2 == 0)
+        up = j % 2 == 0
         d = seg_dir(j)
         out = []
         if grid:
@@ -452,7 +452,7 @@ def knot_paths(R, H, z0, L, B, offsets, rho, depth, over_under,
             mid = -math.pi / 2 if bottom else math.pi / 2
             # sweep a0 -> a1 the way that passes the apex
             sweep = (a1 - a0) % (2 * math.pi)
-            if not (0 < ((mid - a0) % (2 * math.pi)) < sweep):
+            if not 0 < (mid - a0) % (2 * math.pi) < sweep:
                 sweep -= 2 * math.pi
             out = []
             for t_o, _, hw_o in bands:
@@ -651,10 +651,10 @@ def vertex_offset(R, H, L, B, clear):
 
 def pin_points(R, H, z0, L, B, mode, end_bights, clear, edge_rows=False, valid=None,
                bight=None):
-    """bight=(u_shift, rho): put the end-bight pins at a shifted lane's own
-    bight (gaucho colour A) instead of the strand centreline."""
-    valid = valid or knot_valid
     """Pin hole positions (theta, z).
+
+    bight=(u_shift, rho): put the end-bight pins at a shifted lane's own
+    bight (gaucho colour A) instead of the strand centreline.
 
     Pins sit in the V just beyond a vertex, `clear` from both strand centrelines.
     End bights: inside each bight apex.
@@ -666,6 +666,7 @@ def pin_points(R, H, z0, L, B, mode, end_bights, clear, edge_rows=False, valid=N
     'vertex': above and below every crossing.
     'centre': diamond centres.
     """
+    valid = valid or knot_valid
     d = vertex_offset(R, H, L, B, clear)
     pts = []
     if end_bights:
@@ -702,8 +703,8 @@ def pin_points(R, H, z0, L, B, mode, end_bights, clear, edge_rows=False, valid=N
 
 
 def turnaround_leads(L, B, edge_rows=False, valid=None):
-    valid = valid or knot_valid
     """Lead counts available as shorter knots (from bottom; from top is mirror)."""
+    valid = valid or knot_valid
     top = L if edge_rows else L - 1
     return [k for k in range(2, top) if valid(k, B)]
 

@@ -43,13 +43,12 @@ def _define_handler(handler_type, callback, name):
     name = name or handler_type.__name__
 
     class Handler(handler_type):
-        def __init__(self):
-            super().__init__()
+        """Fusion event handler that forwards to `callback`."""
 
         def notify(self, args):
             try:
                 callback(args)
-            except:
+            except Exception:  # pylint: disable=broad-exception-caught
                 handle_error(name, show_message_box=True)
 
     return Handler

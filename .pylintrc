@@ -1,0 +1,37 @@
+# Pylint settings for a Fusion 360 add-in.
+# adsk.* only exists inside Fusion, the add-in folder name has spaces (so it
+# is not an importable package), the geometry follows maths notation (R, H,
+# L, B, ...) and Fusion's API raises plain Exception, so the checks below
+# would only report noise. Everything else stays on.
+[MAIN]
+ignored-modules=adsk,adsk.core,adsk.fusion,adsk.cam
+
+[MESSAGES CONTROL]
+disable=
+    import-error,
+    no-name-in-module,
+    relative-beyond-top-level,
+    wrong-import-position,
+    wildcard-import,
+    unused-wildcard-import,
+    invalid-name,
+    missing-module-docstring,
+    missing-function-docstring,
+    broad-exception-caught,
+    consider-using-f-string,
+    global-statement,
+    unused-argument,
+    import-outside-toplevel,
+    duplicate-code,
+    too-many-locals,
+    too-many-arguments,
+    too-many-positional-arguments,
+    too-many-statements,
+    too-many-branches,
+    too-many-return-statements,
+    too-many-boolean-expressions,
+    too-many-lines,
+    too-few-public-methods
+
+[FORMAT]
+max-line-length=120

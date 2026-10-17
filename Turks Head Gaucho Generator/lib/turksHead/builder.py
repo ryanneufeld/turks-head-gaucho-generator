@@ -229,6 +229,7 @@ def _engrave(comp, paths, r, keep_name=None, fill_args=None):
                     except Exception:
                         pass
     prog.hide()
+    return None
 
 
 def _tbm_op(tbm, a, b, op):
@@ -261,7 +262,6 @@ def _ring_cutter(tbm, R, th, z, r_in, r_out, a0, sweep, depth):
     try:
         er = adsk.core.Vector3D.create(math.cos(th), math.sin(th), 0)
         et = adsk.core.Vector3D.create(-math.sin(th), math.cos(th), 0)
-        ez = adsk.core.Vector3D.create(0, 0, 1)
 
         def P(k_r, k_t=0.0, k_z=0.0):
             return _pt(R * er.x + k_r * er.x + k_t * et.x,
@@ -739,7 +739,6 @@ def _engrave_numbers(comp, R, h, spots, depth, parametric=True):
     feats = comp.features
     VR = adsk.core.ValueInput.createByReal
     tbm = adsk.fusion.TemporaryBRepManager.get()
-    U = adsk.fusion.BooleanTypes.UnionBooleanType
     I = adsk.fusion.BooleanTypes.IntersectionBooleanType
     pi_ = comp.constructionPlanes.createInput()
     pi_.setByOffset(comp.yZConstructionPlane, VR(R + 0.05))
@@ -1013,7 +1012,7 @@ def build(p, transform=None):
             lead = None
             if p.get('cleat_align', True):
                 _bands = lane_layout(p)[3]
-                th_e, z_e, lead = cleat_alignment(
+                th_e, _, lead = cleat_alignment(
                     p, R, H, L, B, z0, offset=_bands[0][1] if _bands else 0.0)
                 phi = th_e - math.pi / 2.0   # slot runs along theta = 90 deg before turning
             plane = _slot_plane(comp, phi)
@@ -1025,8 +1024,8 @@ def build(p, transform=None):
             pts = [m2s(_pt(x * cph, x * sph, z)) for x, z in outline]
             csk.isComputeDeferred = True
             lines = csk.sketchCurves.sketchLines
-            for i in range(len(pts)):
-                lines.addByTwoPoints(pts[i], pts[(i + 1) % len(pts)])
+            for i, pt in enumerate(pts):
+                lines.addByTwoPoints(pt, pts[(i + 1) % len(pts)])
             csk.isComputeDeferred = False
             ei = feats.extrudeFeatures.createInput(
                 csk.profiles.item(0), OPS.CutFeatureOperation)
