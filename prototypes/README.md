@@ -1,6 +1,6 @@
 # v2 test prints (issue #2), round 2
 
-Round 2 changes: seam is **mushroom tabs and straight slits**: two tabs (3 mm stem, 9 mm half-round cap) on one end push down through straight slits set 6 mm back from the other end, which the tab end overlaps; the cap's flat shoulders catch under the slit ends; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop at the seat, lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
+Round 2 changes: seam is **mushroom tabs and straight slits**: two tabs (3 mm stem, 9 mm half-round cap) on one end push down through straight slits (8.2 × 1.2 mm) set 6 mm back from the other end, which the tab end overlaps; the cap flexes 0.4 mm each side to pass and its shoulders catch; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop exactly at the seat (~0.1 mm slack), lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
 
 Throwaway prints to check the v2 template/mandrel assumptions before building the generator.
 

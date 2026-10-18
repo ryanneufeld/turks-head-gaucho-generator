@@ -22,8 +22,9 @@ overlap = 6;            // tab end lies over this strip of the slit end
 neck_w = 6;             // tab neck width (= slit length less clearance)
 ear = 1.5;              // each ear sticks out this far beyond the neck
 neck_len = 3;           // stem from the tab end's edge to the cap (room to bend down through the slit)
-slit_w = 0.8;           // slit opening across
-slit_clr = 0.4;         // slit length = neck_w + slit_clr
+slit_w = 1.2;           // slit opening across (sheet 0.4 + room to bend)
+slit_short = 0.8;       // slit is this much shorter than the cap: the cap flexes 0.4 mm
+                        // each side to pass, then its shoulders catch
 tab_y = [W * 0.25, W * 0.75];
 pin_d = 3;
 lane_w = 4;
@@ -38,7 +39,7 @@ module tab2d() {        // mushroom: stem from the edge, half-round cap with fla
     }
 }
 module slit2d() {       // straight slit, centred on y = 0, x = 0
-    sl = neck_w + slit_clr;
+    sl = neck_w + 2 * ear - slit_short;
     translate([-slit_w / 2, -sl / 2]) square([slit_w, sl]);
 }
 // holes: hole 0 in the overlap, through both ends, so one pin locks the seam
@@ -76,6 +77,10 @@ ramp = 0.5;             // extra slot height at the entry, closing to seat_gap
 seat_gap = 0.05;        // axial play once seated
 detent = 0.12;          // detent interference (radial)
 lug_half = lug_w / (PI * spig) * 180;
+// hard stop: the slot's far end sits just past the lug's leading inner corner,
+// so the lug stops exactly at the seat (round 2 over-rotated by ~1-2 deg + slack)
+stop_slack = 0.1;       // mm of travel left past the seat
+lead_half = atan((lug_w / 2 + stop_slack) / (spig / 2));
 H = 45;                 // socket height (it is also the wrap-test tube)
 zb = H - entry - 0.5;   // slot floor in the socket
 r_wall = spig / 2 + lug_r + cl_r;   // slot outer wall
@@ -113,7 +118,7 @@ module slot(a0) {
             a = a0 - t * twist;
             roof = lug_h + seat_gap + ramp * (1 - t);
             rotate(a) for (s = [-1, 1])
-                rotate(s * (lug_half + 1)) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
+                rotate(s < 0 ? -lead_half : lug_half + 1) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
         }
     }
 }
