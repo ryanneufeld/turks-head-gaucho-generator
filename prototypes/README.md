@@ -1,6 +1,6 @@
 # v2 test prints (issue #2), round 2
 
-Round 2 changes: seam is a **papercraft tab and slit**: two round-headed tabs with ears on one end push down through slits set 6 mm back from the other end, which the tab end overlaps; the ears catch under the slit ends; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop at the seat, lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
+Round 2 changes: seam is **mushroom tabs and straight slits**: two tabs (3 mm stem, 9 mm half-round cap) on one end push down through straight slits set 6 mm back from the other end, which the tab end overlaps; the cap's flat shoulders catch under the slit ends; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop at the seat, lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
 
 Throwaway prints to check the v2 template/mandrel assumptions before building the generator.
 

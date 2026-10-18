@@ -1,6 +1,6 @@
 // v2 test prints (issue #2), round 2.
-// - sheet: papercraft tab and slit: round-headed tabs with ears on one end
-//   push through slits set back from the other end; pin through the overlap;
+// - sheet: mushroom tabs on one end push through straight slits set back
+//   from the other end; pin through the overlap;
 //   V notches mark the seam
 // - bayonet: ceiling ramps down as you twist so the joint draws snug, hard stop
 //   at the seat, light detent; matching index marks show "in time"
@@ -9,9 +9,9 @@ part = "sheet";
 $fn = 64;
 
 /* ---------------- sheet ---------------- */
-// Papercraft tab and slit: the slit end has slits set back from its edge; the
-// tab end overlaps it and each tab's rounded head is pushed down through a
-// slit, its ears catching under the slit ends.
+// Mushroom tab and straight slit: the slit end has slits set back from its
+// edge; the tab end overlaps it and each tab's cap is pushed down through a
+// slit, its flat shoulders catching under the slit ends.
 D = 40;                 // tube (mandrel) diameter
 layer = 0.2;
 layers = 2;
@@ -21,8 +21,7 @@ circ = PI * (D + T);    // neutral-axis circumference
 overlap = 6;            // tab end lies over this strip of the slit end
 neck_w = 6;             // tab neck width (= slit length less clearance)
 ear = 1.5;              // each ear sticks out this far beyond the neck
-neck_len = 2;           // neck from the tab end's edge to the head
-head_len = 6;           // head, rounded tip
+neck_len = 3;           // stem from the tab end's edge to the cap (room to bend down through the slit)
 slit_w = 0.8;           // slit opening across
 slit_clr = 0.4;         // slit length = neck_w + slit_clr
 tab_y = [W * 0.25, W * 0.75];
@@ -30,18 +29,17 @@ pin_d = 3;
 lane_w = 4;
 L_sheet = circ + overlap;
 
-module tab2d() {        // root on x = 0, pointing +x, centred on y = 0
+module tab2d() {        // mushroom: stem from the edge, half-round cap with flat shoulders
     hw = neck_w + 2 * ear;
     translate([-0.01, -neck_w / 2]) square([neck_len + 0.02, neck_w]);
-    hull() {
-        translate([neck_len, -hw / 2]) square([0.01, hw]);
-        translate([neck_len + head_len - hw / 2, 0]) circle(d = hw);
+    translate([neck_len, 0]) intersection() {
+        circle(d = hw);
+        translate([0, -hw / 2]) square([hw / 2, hw]);
     }
 }
-module slit2d() {       // centred on y = 0, x = 0; relief cuts at both ends let the ears through
+module slit2d() {       // straight slit, centred on y = 0, x = 0
     sl = neck_w + slit_clr;
     translate([-slit_w / 2, -sl / 2]) square([slit_w, sl]);
-    for (s = [-1, 1]) translate([0, s * sl / 2]) rotate(s * 35) translate([-0.3, -0.1]) square([0.6, 1.4], center = false);
 }
 // holes: hole 0 in the overlap, through both ends, so one pin locks the seam
 function hole_x(i) = overlap / 2 + circ * i / 6;
