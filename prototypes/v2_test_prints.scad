@@ -1,104 +1,134 @@
-// v2 test prints (issue #2): thin wrap sheet + bayonet joint at 40 mm.
-// Throwaway: answers "does a 2-layer PLA sheet wrap, close and hold pins?"
-// and "does a 3-lug 30-degree bayonet print and lock well?"
+// v2 test prints (issue #2), round 2.
+// - sheet: tabs on each end slide UNDER the other end (1 layer thick), pin
+//   through the overlap; V notches at both ends mark the seam
+// - bayonet: ceiling ramps down as you twist so the joint draws snug, hard stop
+//   at the seat, light detent; matching index marks show "in time"
 // part: sheet | lane | socket | plug
 part = "sheet";
+$fn = 64;
 
-/* sheet */
+/* ---------------- sheet ---------------- */
 D = 40;                 // tube (mandrel) diameter
 layer = 0.2;
 layers = 2;
 T = layer * layers;     // sheet thickness
 W = 40;                 // sheet width along the tube
 circ = PI * (D + T);    // neutral-axis circumference
-knob = 6;               // puzzle-tab knob diameter
-neck = 3.5;
-clr = 0.15;             // tab clearance
+tab_len = 10;           // how far each tab slides under the other end
+tab_gap = 0.4;          // side clearance between interleaved tabs
+bands = 5;              // tabs alternate: even bands from the +x end, odd from 0
 pin_d = 3;
 lane_w = 4;
-$fn = 48;
+band_w = W / bands;
 
-module tab2d(c = 0) {   // knob pointing +x, its base on x = 0
-    translate([-0.01, -neck / 2 - c]) square([knob * 0.6 + 0.01, neck + 2 * c]);
-    translate([knob * 0.6, 0]) circle(d = knob + 2 * c);
+module tab2d(b, from_end) {     // tab in band b, sticking out past one end
+    y0 = b * band_w + tab_gap / 2;
+    if (from_end) translate([circ, y0]) square([tab_len, band_w - tab_gap]);
+    else translate([-tab_len, y0]) square([tab_len, band_w - tab_gap]);
 }
-tabs_y = [W * 0.2, W * 0.5, W * 0.8];
-
-module sheet2d() {
+// hole 0 sits in the overlap (x = tab_len/2): through the body at one end and
+// the tab from the other end, so one pin locks the seam
+function hole_x(i) = tab_len / 2 + circ * i / 6;
+module holes2d(x_shift = 0) {
+    for (i = [0:5]) translate([hole_x(i) + x_shift, W / 2]) circle(d = pin_d + 0.2);
+}
+module notch2d() {              // seam marks: V notches in the top edge at both ends
+    for (x = [0, circ]) translate([x, W]) polygon([[-1.5, 0.01], [1.5, 0.01], [0, -2.5]]);
+}
+module body2d() { difference() { square([circ, W]); holes2d(); notch2d(); lane2d(); } }
+module tabs2d() {
     difference() {
-        union() {
-            square([circ, W]);
-            for (y = tabs_y) translate([circ, y]) tab2d();          // male end
-        }
-        for (y = tabs_y) translate([0, y]) tab2d(clr);              // female end
-        // pin holes: one row, 6 holes round the tube
-        for (i = [0:5]) translate([circ * (i + 0.5) / 6, W / 2]) circle(d = pin_d + 0.2);
-        lane2d();
+        union() for (b = [0:bands - 1]) tab2d(b, b % 2 == 0);
+        holes2d(circ);          // the +x tabs carry hole 0 at circ + tab_len/2
+        holes2d(-circ);
     }
 }
-// a diagonal colour lane crossing the sheet, broken where it "goes under"
+// a diagonal colour lane, broken where it "goes under"
 module lane2d() {
     intersection() {
         square([circ, W]);
         difference() {
             translate([0, 2]) rotate(atan2(W - 4, circ)) translate([0, -lane_w / 2]) square([circ * 1.2, lane_w]);
-            translate([circ * 0.5, 0]) square([lane_w + 1, W]);     // the gap
+            translate([circ * 0.5, 0]) square([lane_w + 1, W]);
         }
     }
 }
 
-/* bayonet (3 lugs, 30 deg twist, detent) */
-OD = 40;  spig = 30;  cl = 0.25;   // spigot dia, radial clearance
-lug_w = 6; lug_h = 3; lug_r = 1.6; // lug width (arc), height, radial depth
+/* ---------------- bayonet ---------------- */
+OD = 40;  spig = 30;
+cl_r = 0.2;             // radial clearance, spigot and lugs
+lug_w = 6; lug_h = 3; lug_r = 1.6;
 twist = 30;
-entry = 7;                          // depth to the horizontal slot
-module lug() {                      // 45-degree underside: prints without support
-    // the outer face is relieved 0.5 mm except a ridge on the trailing edge, so
-    // the detent only catches over the last degree of twist (a click, not a rub)
+entry = 7;              // depth from the socket face to the bottom of the slot
+ramp = 0.5;             // extra slot height at the entry, closing to seat_gap
+seat_gap = 0.05;        // axial play once seated
+detent = 0.12;          // detent interference (radial)
+lug_half = lug_w / (PI * spig) * 180;
+H = 45;                 // socket height (it is also the wrap-test tube)
+zb = H - entry - 0.5;   // slot floor in the socket
+r_wall = spig / 2 + lug_r + cl_r;   // slot outer wall
+
+module lug() {          // 45-degree underside so it prints upright unsupported
+    // outer face relieved 0.4 mm except a ridge on the trailing edge: only the
+    // ridge meets the detent, over the last couple of degrees (click, not rub)
     hull() {
-        translate([spig / 2 - 0.5, -lug_w / 2, lug_r]) cube([0.5 + lug_r - 0.5, lug_w, lug_h - lug_r]);
+        translate([spig / 2 - 0.5, -lug_w / 2, lug_r]) cube([0.5 + lug_r - 0.4, lug_w, lug_h - lug_r]);
         translate([spig / 2 - 0.5, -lug_w / 2, 0]) cube([0.5, lug_w, lug_h]);
     }
-    hull() {   // ridge: on the -y side, which trails once the plug is flipped onto the socket
-        translate([spig / 2 - 0.5, -lug_w / 2, lug_r]) cube([0.5 + lug_r, 1.2, lug_h - lug_r]);
-        translate([spig / 2 - 0.5, -lug_w / 2, 0]) cube([0.5, 1.2, lug_h]);
+    hull() {            // ridge on -y: it trails once the plug is flipped onto the socket
+        translate([spig / 2 - 0.5, -lug_w / 2, lug_r]) cube([0.5 + lug_r, 1.0, lug_h - lug_r]);
+        translate([spig / 2 - 0.5, -lug_w / 2, 0]) cube([0.5, 1.0, lug_h]);
     }
 }
-module plug() {                     // printed upright, spigot up
-    cylinder(d = OD, h = 10);
+module plug() {         // printed upright, spigot up; flip onto the socket
+    difference() {
+        cylinder(d = OD, h = 10);
+        // index mark: a V groove down the side at angle 0
+        translate([OD / 2, 0, -1]) rotate([0, 0, 45]) cube([1.6, 1.6, 12], center = false);
+    }
     translate([0, 0, 10]) {
         difference() { cylinder(d = spig, h = entry + 2); translate([0, 0, -1]) cylinder(d = spig - 6, h = entry + 4); }
-        // lug height matches the socket's horizontal slot once the plug is flipped onto it
-        for (a = [0, 120, 240]) rotate(a) translate([0, 0, entry + 0.5 - cl - lug_h]) lug();
+        // lugs sit in the slot band (zb .. zb + lug_h) once flipped onto the socket
+        for (a = [0, 120, 240]) rotate(a) translate([0, 0, entry + 0.5 - lug_h - seat_gap / 2]) lug();
     }
 }
-module socket() {                   // printed upright, opening up; also the wrap test tube
-    H = 45;
+// horizontal slot: thin angular slices, roof lowering from +ramp to +seat_gap
+module slot(a0) {
+    n = 15;
+    for (i = [0:n - 1]) {
+        t0 = i / n; t1 = (i + 1) / n;
+        hull() for (t = [t0, t1]) {
+            a = a0 - t * twist;
+            roof = lug_h + seat_gap + ramp * (1 - t);
+            rotate(a) for (s = [-1, 1])
+                rotate(s * (lug_half + 1)) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
+        }
+    }
+}
+module socket() {       // printed upright, opening up
     difference() {
         cylinder(d = OD, h = H);
-        translate([0, 0, H - entry - 2.2]) cylinder(d = spig + 2 * cl, h = entry + 3);
-        translate([0, 0, -1]) cylinder(d = spig - 8, h = H);   // hollow core (storage)
-        for (a = [0, 120, 240]) rotate(a) {
-            r = spig / 2 + lug_r + cl + 0.2;
+        translate([0, 0, zb - 1.7]) cylinder(d = spig + 2 * cl_r, h = entry + 3);
+        translate([0, 0, -1]) cylinder(d = spig - 8, h = H);    // hollow core (storage)
+        for (a = [0, 120, 240]) {
             // vertical entry slot
-            translate([0, -lug_w / 2 - cl, H - entry - 0.5]) cube([r, lug_w + 2 * cl, entry + 1]);
-            // horizontal slot, 30 deg, roof chamfered 45 deg for printing
-            translate([0, 0, H - entry - 0.5])
-                rotate_extrude(angle = -twist - lug_w / (PI * spig) * 360 / 2 - 2)
-                    polygon([[0, 0], [r, 0], [r, lug_h + 2 * cl], [spig / 2 - 0.5, lug_h + 2 * cl + lug_r], [0, lug_h + 2 * cl + lug_r]]);
+            rotate(a) translate([0, -lug_w / 2 - cl_r - 0.3, zb]) cube([r_wall, lug_w + 2 * cl_r + 0.6, entry + 2]);
+            slot(a);
         }
-        // pin-hold test: 6 blind 3 mm holes, 10 mm deep, matching the sheet's holes
+        // index marks: insert at the dot (0 deg), locked when the plug's groove meets the line
+        translate([OD / 2, 0, H - 4]) rotate([0, 90, 0]) cylinder(d = 2, h = 2, center = true);
+        rotate(-twist) translate([OD / 2, 0, H - 6]) rotate([0, 0, 45]) cube([1.6, 1.6, 7]);
+        // pin-hold test: 6 blind 3 mm holes at 20 mm, matching the sheet's holes
         for (i = [0:5]) rotate(i * 60) translate([OD / 2 - 10, 0, 20]) rotate([0, 90, 0]) cylinder(d = pin_d + 0.15, h = 11);
     }
-    // detent: a bump on the slot's outer wall just behind the seated lug's trailing
-    // edge (0.25 mm interference); the wall flexes, the lug clicks past and stays
-    lug_half = lug_w / (PI * spig) * 180;
-    r_wall = spig / 2 + lug_r + cl + 0.2;
-    for (a = [0, 120, 240]) rotate(a - twist + lug_half + 1)
-        translate([r_wall, 0, H - entry - 0.5 + (lug_h + 2 * cl) / 2]) scale([1, 1, 2.5]) sphere(r = 0.7, $fn = 16);
+    // detent: small bump on each slot's outer wall just behind the seated lug
+    for (a = [0, 120, 240]) rotate(a - twist + lug_half + 2.6)
+        translate([spig / 2 + lug_r - detent + 0.6, 0, zb + lug_h / 2]) scale([1, 1, 2]) sphere(r = 0.6, $fn = 16);
 }
 
-if (part == "sheet") linear_extrude(T) sheet2d();
-else if (part == "lane") linear_extrude(T) lane2d();
+if (part == "sheet") {
+    linear_extrude(T) body2d();
+    linear_extrude(layer) tabs2d();     // tabs: the bottom layer only (the inner face)
+} else if (part == "lane") linear_extrude(T) lane2d();
 else if (part == "socket") socket();
 else if (part == "plug") plug();
