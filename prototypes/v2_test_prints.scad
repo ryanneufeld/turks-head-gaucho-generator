@@ -1,6 +1,7 @@
 // v2 test prints (issue #2), round 2.
-// - sheet: tab and slot. Dovetail tabs on one end slide UNDER the other end
-//   (1 layer thick) into dovetail slots in its bottom layer; pin through the overlap; V notches at both ends mark the seam
+// - sheet: papercraft tab and slit: round-headed tabs with ears on one end
+//   push through slits set back from the other end; pin through the overlap;
+//   V notches mark the seam
 // - bayonet: ceiling ramps down as you twist so the joint draws snug, hard stop
 //   at the seat, light detent; matching index marks show "in time"
 // part: sheet | lane | socket | plug
@@ -8,59 +9,61 @@ part = "sheet";
 $fn = 64;
 
 /* ---------------- sheet ---------------- */
+// Papercraft tab and slit: the slit end has slits set back from its edge; the
+// tab end overlaps it and each tab's rounded head is pushed down through a
+// slit, its ears catching under the slit ends.
 D = 40;                 // tube (mandrel) diameter
 layer = 0.2;
 layers = 2;
 T = layer * layers;     // sheet thickness
 W = 40;                 // sheet width along the tube
 circ = PI * (D + T);    // neutral-axis circumference
-tab_len = 10;           // how far each tab slides under the other end
-tab_gap = 0.4;          // side clearance between interleaved tabs
-bands = 5;              // tab positions: the even bands
-tab_bands = [0, 2, 4];  // tabs only on the +x end, slots only on the 0 end
+overlap = 6;            // tab end lies over this strip of the slit end
+neck_w = 6;             // tab neck width (= slit length less clearance)
+ear = 1.5;              // each ear sticks out this far beyond the neck
+neck_len = 2;           // neck from the tab end's edge to the head
+head_len = 6;           // head, rounded tip
+slit_w = 0.8;           // slit opening across
+slit_clr = 0.4;         // slit length = neck_w + slit_clr
+tab_y = [W * 0.25, W * 0.75];
 pin_d = 3;
 lane_w = 4;
-band_w = W / bands;
+L_sheet = circ + overlap;
 
-// dovetail tab: narrow at the root (the seam), wide at the tip
-tab_root = 0.5;         // root width as a fraction of the band
-tab_tip = 0.85;         // tip width as a fraction of the band
-tab_clr = 0.15;         // clearance between a tab and its pocket
-module dovetail2d(c = 0) {      // root on x = 0, pointing +x, centred on y = 0
-    polygon([[-0.01, -band_w * tab_root / 2 - c], [tab_len + c, -band_w * tab_tip / 2 - c],
-             [tab_len + c, band_w * tab_tip / 2 + c], [-0.01, band_w * tab_root / 2 + c]]);
-}
-module tab2d(b) {               // tab in band b, sticking out past the +x end
-    translate([circ, (b + 0.5) * band_w]) dovetail2d();
-}
-// slots: where the tabs land on the 0 end, dovetail pockets in the bottom
-// layer, roofed by the top layer, so a wrapped tab drops in and locks
-module pockets2d() {
-    for (b = tab_bands) translate([0, (b + 0.5) * band_w]) dovetail2d(tab_clr);
-}
-// hole 0 sits in the overlap (x = tab_len/2): through the body at one end and
-// the tab from the other end, so one pin locks the seam
-function hole_x(i) = tab_len / 2 + circ * i / 6;
-module holes2d(x_shift = 0) {
-    for (i = [0:5]) translate([hole_x(i) + x_shift, W / 2]) circle(d = pin_d + 0.2);
-}
-module notch2d() {              // seam marks: V notches in the top edge at both ends
-    for (x = [0, circ]) translate([x, W]) polygon([[-1.5, 0.01], [1.5, 0.01], [0, -2.5]]);
-}
-module body2d() { difference() { square([circ, W]); holes2d(); notch2d(); lane2d(); } }
-module tabs2d() {
-    difference() {
-        union() for (b = tab_bands) tab2d(b);
-        holes2d(circ);          // the middle tab carries hole 0 at circ + tab_len/2
+module tab2d() {        // root on x = 0, pointing +x, centred on y = 0
+    hw = neck_w + 2 * ear;
+    translate([-0.01, -neck_w / 2]) square([neck_len + 0.02, neck_w]);
+    hull() {
+        translate([neck_len, -hw / 2]) square([0.01, hw]);
+        translate([neck_len + head_len - hw / 2, 0]) circle(d = hw);
     }
+}
+module slit2d() {       // centred on y = 0, x = 0; relief cuts at both ends let the ears through
+    sl = neck_w + slit_clr;
+    translate([-slit_w / 2, -sl / 2]) square([slit_w, sl]);
+    for (s = [-1, 1]) translate([0, s * sl / 2]) rotate(s * 35) translate([-0.3, -0.1]) square([0.6, 1.4], center = false);
+}
+// holes: hole 0 in the overlap, through both ends, so one pin locks the seam
+function hole_x(i) = overlap / 2 + circ * i / 6;
+module holes2d() { for (i = [0:6]) translate([hole_x(i), W / 2]) circle(d = pin_d + 0.2); }
+module notch2d() {      // seam marks: the tab end's edge lines up with the slit line
+    for (x = [overlap, L_sheet]) translate([x, W]) polygon([[-1.5, 0.01], [1.5, 0.01], [0, -2.5]]);
+}
+module body2d() {
+    difference() {
+        square([L_sheet, W]);
+        holes2d(); notch2d(); lane2d();
+        for (y = tab_y) translate([overlap, y]) slit2d();
+    }
+    for (y = tab_y) translate([L_sheet, y]) tab2d();
 }
 // a diagonal colour lane, broken where it "goes under"
 module lane2d() {
     intersection() {
-        square([circ, W]);
+        translate([overlap, 0]) square([circ, W]);
         difference() {
-            translate([0, 2]) rotate(atan2(W - 4, circ)) translate([0, -lane_w / 2]) square([circ * 1.2, lane_w]);
-            translate([circ * 0.5, 0]) square([lane_w + 1, W]);
+            translate([overlap, 2]) rotate(atan2(W - 4, circ)) translate([0, -lane_w / 2]) square([circ * 1.2, lane_w]);
+            translate([overlap + circ * 0.5, 0]) square([lane_w + 1, W]);
         }
     }
 }
@@ -137,14 +140,7 @@ module socket() {       // printed upright, opening up
         translate([spig / 2 + lug_r - detent + 0.6, 0, zb + lug_h / 2]) scale([1, 1, 2]) sphere(r = 0.6, $fn = 16);
 }
 
-if (part == "sheet") {
-    // bottom layer (inner face): body with dovetail pockets, plus the tabs
-    linear_extrude(layer) { difference() { body2d(); pockets2d(); } tabs2d(); }
-    // upper layers: full body, roofing the pockets
-    translate([0, 0, layer]) linear_extrude(T - layer) body2d();
-} else if (part == "lane") {
-    linear_extrude(layer) difference() { lane2d(); pockets2d(); }   // keep the pockets clear
-    translate([0, 0, layer]) linear_extrude(T - layer) lane2d();
-}
+if (part == "sheet") linear_extrude(T) body2d();
+else if (part == "lane") linear_extrude(T) lane2d();
 else if (part == "socket") socket();
 else if (part == "plug") plug();
