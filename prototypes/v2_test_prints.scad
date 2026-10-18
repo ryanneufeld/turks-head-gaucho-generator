@@ -1,6 +1,6 @@
 // v2 test prints (issue #2), round 2.
-// - sheet: tabs on each end slide UNDER the other end (1 layer thick), pin
-//   through the overlap; V notches at both ends mark the seam
+// - sheet: dovetail tabs on each end slide UNDER the other end (1 layer
+//   thick) into dovetail pockets in its bottom layer; pin through the overlap; V notches at both ends mark the seam
 // - bayonet: ceiling ramps down as you twist so the joint draws snug, hard stop
 //   at the seat, light detent; matching index marks show "in time"
 // part: sheet | lane | socket | plug
@@ -21,10 +21,27 @@ pin_d = 3;
 lane_w = 4;
 band_w = W / bands;
 
+// dovetail tab: narrow at the root (the seam), wide at the tip
+tab_root = 0.5;         // root width as a fraction of the band
+tab_tip = 0.85;         // tip width as a fraction of the band
+tab_clr = 0.15;         // clearance between a tab and its pocket
+module dovetail2d(c = 0) {      // root on x = 0, pointing +x, centred on y = 0
+    polygon([[-0.01, -band_w * tab_root / 2 - c], [tab_len + c, -band_w * tab_tip / 2 - c],
+             [tab_len + c, band_w * tab_tip / 2 + c], [-0.01, band_w * tab_root / 2 + c]]);
+}
 module tab2d(b, from_end) {     // tab in band b, sticking out past one end
-    y0 = b * band_w + tab_gap / 2;
-    if (from_end) translate([circ, y0]) square([tab_len, band_w - tab_gap]);
-    else translate([-tab_len, y0]) square([tab_len, band_w - tab_gap]);
+    yc = (b + 0.5) * band_w;
+    if (from_end) translate([circ, yc]) dovetail2d();
+    else translate([0, yc]) mirror([1, 0]) dovetail2d();
+}
+// where the other end's tabs land on this end: dovetail pockets in the bottom
+// layer, roofed by the top layer, so a wrapped tab drops in and locks
+module pockets2d() {
+    for (b = [0:bands - 1]) {
+        yc = (b + 0.5) * band_w;
+        if (b % 2 == 0) translate([0, yc]) dovetail2d(tab_clr);              // +x tabs land at x = 0..
+        else translate([circ, yc]) mirror([1, 0]) dovetail2d(tab_clr);       // 0-end tabs land at ..circ
+    }
 }
 // hole 0 sits in the overlap (x = tab_len/2): through the body at one end and
 // the tab from the other end, so one pin locks the seam
@@ -127,8 +144,13 @@ module socket() {       // printed upright, opening up
 }
 
 if (part == "sheet") {
-    linear_extrude(T) body2d();
-    linear_extrude(layer) tabs2d();     // tabs: the bottom layer only (the inner face)
-} else if (part == "lane") linear_extrude(T) lane2d();
+    // bottom layer (inner face): body with dovetail pockets, plus the tabs
+    linear_extrude(layer) { difference() { body2d(); pockets2d(); } tabs2d(); }
+    // upper layers: full body, roofing the pockets
+    translate([0, 0, layer]) linear_extrude(T - layer) body2d();
+} else if (part == "lane") {
+    linear_extrude(layer) difference() { lane2d(); pockets2d(); }   // keep the pockets clear
+    translate([0, 0, layer]) linear_extrude(T - layer) lane2d();
+}
 else if (part == "socket") socket();
 else if (part == "plug") plug();
