@@ -1,6 +1,6 @@
 // v2 test prints (issue #2), round 2.
-// - sheet: dovetail tabs on each end slide UNDER the other end (1 layer
-//   thick) into dovetail pockets in its bottom layer; pin through the overlap; V notches at both ends mark the seam
+// - sheet: tab and slot. Dovetail tabs on one end slide UNDER the other end
+//   (1 layer thick) into dovetail slots in its bottom layer; pin through the overlap; V notches at both ends mark the seam
 // - bayonet: ceiling ramps down as you twist so the joint draws snug, hard stop
 //   at the seat, light detent; matching index marks show "in time"
 // part: sheet | lane | socket | plug
@@ -16,7 +16,8 @@ W = 40;                 // sheet width along the tube
 circ = PI * (D + T);    // neutral-axis circumference
 tab_len = 10;           // how far each tab slides under the other end
 tab_gap = 0.4;          // side clearance between interleaved tabs
-bands = 5;              // tabs alternate: even bands from the +x end, odd from 0
+bands = 5;              // tab positions: the even bands
+tab_bands = [0, 2, 4];  // tabs only on the +x end, slots only on the 0 end
 pin_d = 3;
 lane_w = 4;
 band_w = W / bands;
@@ -29,19 +30,13 @@ module dovetail2d(c = 0) {      // root on x = 0, pointing +x, centred on y = 0
     polygon([[-0.01, -band_w * tab_root / 2 - c], [tab_len + c, -band_w * tab_tip / 2 - c],
              [tab_len + c, band_w * tab_tip / 2 + c], [-0.01, band_w * tab_root / 2 + c]]);
 }
-module tab2d(b, from_end) {     // tab in band b, sticking out past one end
-    yc = (b + 0.5) * band_w;
-    if (from_end) translate([circ, yc]) dovetail2d();
-    else translate([0, yc]) mirror([1, 0]) dovetail2d();
+module tab2d(b) {               // tab in band b, sticking out past the +x end
+    translate([circ, (b + 0.5) * band_w]) dovetail2d();
 }
-// where the other end's tabs land on this end: dovetail pockets in the bottom
+// slots: where the tabs land on the 0 end, dovetail pockets in the bottom
 // layer, roofed by the top layer, so a wrapped tab drops in and locks
 module pockets2d() {
-    for (b = [0:bands - 1]) {
-        yc = (b + 0.5) * band_w;
-        if (b % 2 == 0) translate([0, yc]) dovetail2d(tab_clr);              // +x tabs land at x = 0..
-        else translate([circ, yc]) mirror([1, 0]) dovetail2d(tab_clr);       // 0-end tabs land at ..circ
-    }
+    for (b = tab_bands) translate([0, (b + 0.5) * band_w]) dovetail2d(tab_clr);
 }
 // hole 0 sits in the overlap (x = tab_len/2): through the body at one end and
 // the tab from the other end, so one pin locks the seam
@@ -55,9 +50,8 @@ module notch2d() {              // seam marks: V notches in the top edge at both
 module body2d() { difference() { square([circ, W]); holes2d(); notch2d(); lane2d(); } }
 module tabs2d() {
     difference() {
-        union() for (b = [0:bands - 1]) tab2d(b, b % 2 == 0);
-        holes2d(circ);          // the +x tabs carry hole 0 at circ + tab_len/2
-        holes2d(-circ);
+        union() for (b = tab_bands) tab2d(b);
+        holes2d(circ);          // the middle tab carries hole 0 at circ + tab_len/2
     }
 }
 // a diagonal colour lane, broken where it "goes under"

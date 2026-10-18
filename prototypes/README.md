@@ -1,6 +1,6 @@
 # v2 test prints (issue #2), round 2
 
-Round 2 changes: seam tabs are **dovetails** that slide under the other end (1 layer thick) into dovetail pockets in its bottom layer, roofed by the top layer, so they lock when wrapped; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop at the seat, lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
+Round 2 changes: seam is **tab and slot**: three dovetail tabs on one end (1 layer thick) slide under the other end into dovetail slots in its bottom layer, roofed by the top layer, so they lock when wrapped; a pin through the overlap; V notches mark the seam; bayonet roof ramps snug as you twist, hard stop at the seat, lighter detent; index marks (dot = insert, line = locked, plug groove meets the line).
 
 Throwaway prints to check the v2 template/mandrel assumptions before building the generator.
 
