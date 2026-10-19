@@ -1,4 +1,4 @@
-// v2 test prints (issue #2), round 2.
+// v2 test prints (issue #2), round 4.
 // - sheet: mushroom tabs on one end push through straight slits set back
 //   from the other end; pin through the overlap;
 //   V notches mark the seam
@@ -21,10 +21,14 @@ circ = PI * (D + T);    // neutral-axis circumference
 overlap = 6;            // tab end lies over this strip of the slit end
 neck_w = 6;             // tab neck width (= slit length less clearance)
 ear = 1.5;              // each ear sticks out this far beyond the neck
-neck_len = 3;           // stem from the tab end's edge to the cap (room to bend down through the slit)
+neck_len = 1;           // short stem: just enough to bend down through the slit
 slit_w = 1.2;           // slit opening across (sheet 0.4 + room to bend)
-slit_short = 0.8;       // slit is this much shorter than the cap: the cap flexes 0.4 mm
-                        // each side to pass, then its shoulders catch
+slit_short = 0.8;       // straight part is this much shorter than the cap
+// papercraft-style relief: a diagonal cut at each slit end, angled back toward
+// the sheet edge, so the corners flex open to let the cap through, then close
+arm_len = 2.5;
+arm_ang = 40;           // degrees from the slit line
+arm_w = 0.5;
 tab_y = [W * 0.25, W * 0.75];
 pin_d = 3;
 lane_w = 4;
@@ -38,9 +42,11 @@ module tab2d() {        // mushroom: stem from the edge, half-round cap with fla
         translate([0, -hw / 2]) square([hw / 2, hw]);
     }
 }
-module slit2d() {       // straight slit, centred on y = 0, x = 0
+module slit2d() {       // centred on y = 0; the sheet edge is toward -x
     sl = neck_w + 2 * ear - slit_short;
     translate([-slit_w / 2, -sl / 2]) square([slit_w, sl]);
+    for (s = [-1, 1]) translate([0, s * sl / 2])
+        rotate(s * (90 + arm_ang)) translate([-0.4, -arm_w / 2]) square([arm_len + 0.4, arm_w]);
 }
 // holes: hole 0 in the overlap, through both ends, so one pin locks the seam
 function hole_x(i) = overlap / 2 + circ * i / 6;
