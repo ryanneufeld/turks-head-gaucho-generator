@@ -1,4 +1,4 @@
-// v2 test prints (issue #2), round 4.
+// v2 test prints (issue #2), round 4 sheet, round 4 bayonet.
 // - sheet: mushroom tabs on one end push through straight slits set back
 //   from the other end; pin through the overlap;
 //   V notches mark the seam
@@ -80,8 +80,10 @@ lug_w = 6; lug_h = 3; lug_r = 1.6;
 twist = 30;
 entry = 7;              // depth from the socket face to the bottom of the slot
 ramp = 0.5;             // extra slot height at the entry, closing to seat_gap
-seat_gap = 0.05;        // axial play once seated
-detent = 0.12;          // detent interference (radial)
+seat_gap = 0.1;         // axial play once seated (0.05 was stiff at the end)
+detent = 0.25;          // detent interference (radial); 0.12 could not be felt
+ramp_end = 0.6;         // roof reaches seat height this far through the twist, then
+                        // stays level, so the last stretch is free and the click stands out
 lug_half = lug_w / (PI * spig) * 180;
 // hard stop: the slot's far end sits just past the lug's leading inner corner,
 // so the lug stops exactly at the seat (round 2 over-rotated by ~1-2 deg + slack)
@@ -115,14 +117,15 @@ module plug() {         // printed upright, spigot up; flip onto the socket
         for (a = [0, 120, 240]) rotate(a) translate([0, 0, entry + 0.5 - lug_h - seat_gap / 2]) lug();
     }
 }
-// horizontal slot: thin angular slices, roof lowering from +ramp to +seat_gap
+// horizontal slot: thin angular slices, roof lowering from +ramp to +seat_gap,
+// level from ramp_end on
 module slot(a0) {
     n = 15;
     for (i = [0:n - 1]) {
         t0 = i / n; t1 = (i + 1) / n;
         hull() for (t = [t0, t1]) {
             a = a0 - t * twist;
-            roof = lug_h + seat_gap + ramp * (1 - t);
+            roof = lug_h + seat_gap + ramp * max(0, 1 - t / ramp_end);
             rotate(a) for (s = [-1, 1])
                 rotate(s < 0 ? -lead_half : lug_half + 1) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
         }
