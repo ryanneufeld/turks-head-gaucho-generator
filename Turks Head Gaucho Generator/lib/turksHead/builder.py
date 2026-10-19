@@ -9,6 +9,7 @@ import adsk.core
 import adsk.fusion
 
 from .geometry import *
+from .knot import knot_marks
 
 ATTR_GROUP = 'TurksHeadGaucho'
 LEGACY_ATTR_GROUP = 'TurksHeadJig'  # jigs from the plain add-in can be edited too
@@ -296,14 +297,8 @@ def _ring_cutter(tbm, R, th, z, r_in, r_out, a0, sweep, depth):
         return None
 
 
-def _pin_tool_tbm(p, R, H, z0, L, B):
-    """All pin holes as one temporary body (or None)."""
-    gaucho = is_grid(p)
-    spots = pin_points(R, H, z0, L, B, 'none' if passes_of(p) >= 2 else p['hole_mode'],
-                       p['bight_holes'], pin_clear(p, R, H, L, B), p['edge_rows'],
-                       knot_ok(p),
-                       bight=((list(fan_shifts(p, R, H, L, B).values()), lane_rho(p))
-                              if gaucho else None))
+def _pin_tool_tbm(p, R, spots):
+    """All pin holes (theta, z) as one temporary body (or None)."""
     if not spots:
         return None
     tbm = adsk.fusion.TemporaryBRepManager.get()
@@ -1058,115 +1053,58 @@ def build(p, transform=None):
                 note('Cleat lead-in channel')
 
     lap('before lanes')
-    # --- lane marks: solid cord paths or lane outlines
-    if p['engrave']:
-        rho = bight_rho(p, R, H, L, B)
-        W, offsets, types, bands = lane_layout(p)
-        fan = p.get('style') == 'fan'
-        solid = mark_style(p) == 'solid'
-        if solid:
-            # tubes of radius r centred on the surface, side by side across
-            # each lane; ends stop short of the lane passing over
-            r = fill_radius(p)
-            depth = fill_depth(p)
-            offsets, types = fill_offsets(p)
-            gap, end_r = 2.5 * PIN_CLEARANCE, r
-            labels = ('Cord', 'Cord A', 'Cord B')
-        else:
-            r = p['line_w'] / 2.0
-            depth = p['line_d']
-            gap, end_r = p['line_w'] + PIN_CLEARANCE, 0.0  # clear the crossing outline
-            labels = ('Cord outline', 'Cord A outline', 'Cord B outline')
-
-        def paths_for(offs, tys):
-            # outlines: gaucho lanes keep the older concentric bights
-            return knot_paths(R, H, z0, L, B, offs, rho, depth, p['over_under'],
-                              band_h=W / 2.0, cord_code=cord_code_of(p), weave=row_weave_of(p), line_types=tys,
-                              bands=bands, fan=fan, end_gap=gap, end_r=end_r)
-
-        def to3(pieces):
-            return to_3d(R, pieces if solid else u_layers(pieces, r), r)
-
-        fan = is_grid(p)
-        multi = passes_of(p) >= 2
-        shifts = fan_shifts(p, R, H, L, B) if fan else None
-        rho_l = lane_rho(p) if fan else rho
-        grid = (passes_of(p), grid_code(p)) if fan else None
-        if solid:
-            env = (R, -p['handle_len'] - 1.0, Lz + 5.0, parametric)
-            tbm_ = adsk.fusion.TemporaryBRepManager.get()
-            DIFF = adsk.fusion.BooleanTypes.DifferenceBooleanType
-            pin_tbm = _pin_tool_tbm(p, R, H, z0, L, B)
-            groove_tools, sub_occs = [], []
-            colour = p.get('colour_bodies', True)
-            groups = sorted(set(types)) if (colour or multi) else [None]
-            for t in groups:
-                idx = [i for i, x in enumerate(types) if t is None or x == t]
-                r_t, depth_t = r, depth
-                if multi and not colour and t != 'c0':
-                    # one-colour print: colour B is a narrow centre groove,
-                    # colour A the full-width recess, so they read apart
-                    idx, r_t = [idx[len(idx) // 2]], min(0.06, r)
-                    depth_t = r_t
-                    if fan:
-                        offsets = list(offsets)
-                        offsets[idx[0]] = 0.0
-                res = knot_paths(R, H, z0, L, B, [offsets[i] for i in idx], rho_l, depth_t,
-                                 p['over_under'], band_h=W / 2.0, cord_code=cord_code_of(p),
-                                 weave=row_weave_of(p),
-                                 line_types=[types[i] for i in idx], bands=bands, fan=fan,
-                                 end_gap=gap, boxes=True, shift_of=shifts, grid=grid)
-                paths = to_3d(R, [extend_ends(pts, 0.3 * r_t) for pts, _ in res], r_t)
-                bx = [[box_to_3d(R, b, depth) for b in bb] for _, bb in res]
-                name = ('Lane grooves' if t is None else labels[0] if len(groups) == 1
-                        else 'Cord ' + lane_letter(t))
-                if not colour:
-                    name = 'Lane grooves ' + lane_letter(t) if t else 'Lane grooves'
-                got = _engrave_solid(comp, paths, bx, r_t, name, *env, keep='tbm') or []
-                groove_tools += [tbm_.copy(g) for g in got]
-                if colour and t is not None and got:
-                    # the inlay goes straight into its own sub-component (far
-                    # faster than moving it there afterwards); pin holes are
-                    # cut in memory
-                    if pin_tbm is not None:
-                        for g in got:
-                            n0 = _lumps(g)
-                            okp = _tbm_op(tbm_, g, tbm_.copy(pin_tbm), DIFF)
-                            diag.append('{}: pin holes {} -> {} pieces{}'.format(
-                                name, n0, _lumps(g), '' if okp else ' (FAILED)'))
-                    sub = comp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
-                    sub.component.name = name
-                    for g in got:
-                        _add_temp_body(sub.component, g, name, parametric)
-                    sub_occs.append(sub)
-            # one groove cut for every lane
-            # (each colour is already one unioned body; joining the colours
-            # too can fail and silently drop pieces, leaving inlays uncut)
-            if groove_tools:
-                tb = [_add_temp_body(comp, b, 'Groove tool', parametric) for b in groove_tools]
-                if not _combine(comp, _jig_body(comp), tb, CUT, keep=False, stage='Groove cut'):
-                    for b in tb:
-                        _combine(comp, _jig_body(comp), [b], CUT, keep=False,
-                                 stage='Groove cut ' + b.name)
-        elif p.get('colour_bodies', True):
-            groups = sorted(set(types))
-            for t in groups:
-                idx = [i for i, x in enumerate(types) if x == t]
-                part = paths_for([offsets[i] for i in idx], [t] * len(idx))
-                name = (labels[0] if len(groups) == 1 else
-                        labels[1] if t == 'b' else labels[2])
-                _engrave(comp, to3(part), r, keep_name=name,
+    # --- lane marks: solid cord paths or lane outlines (geometry from knot.py)
+    marks = knot_marks(p)
+    if marks.style == 'solid' and marks.groups:
+        env = (R, -p['handle_len'] - 1.0, Lz + 5.0, parametric)
+        tbm_ = adsk.fusion.TemporaryBRepManager.get()
+        DIFF = adsk.fusion.BooleanTypes.DifferenceBooleanType
+        pin_tbm = _pin_tool_tbm(p, R, marks.pins)
+        groove_tools = []
+        for g in marks.groups:
+            paths = to_3d(R, g.pieces, g.r)
+            bx = [[box_to_3d(R, b, g.box_depth) for b in bb] for bb in g.boxes]
+            got = _engrave_solid(comp, paths, bx, g.r, g.name, *env, keep='tbm') or []
+            groove_tools += [tbm_.copy(t) for t in got]
+            if g.inlay and got:
+                # the inlay goes straight into its own sub-component (far
+                # faster than moving it there afterwards); pin holes are
+                # cut in memory
+                if pin_tbm is not None:
+                    for t in got:
+                        n0 = _lumps(t)
+                        okp = _tbm_op(tbm_, t, tbm_.copy(pin_tbm), DIFF)
+                        diag.append('{}: pin holes {} -> {} pieces{}'.format(
+                            g.name, n0, _lumps(t), '' if okp else ' (FAILED)'))
+                sub = comp.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+                sub.component.name = g.name
+                for t in got:
+                    _add_temp_body(sub.component, t, g.name, parametric)
+        # one groove cut for every lane
+        # (each colour is already one unioned body; joining the colours
+        # too can fail and silently drop pieces, leaving inlays uncut)
+        if groove_tools:
+            tb = [_add_temp_body(comp, b, 'Groove tool', parametric) for b in groove_tools]
+            if not _combine(comp, _jig_body(comp), tb, CUT, keep=False, stage='Groove cut'):
+                for b in tb:
+                    _combine(comp, _jig_body(comp), [b], CUT, keep=False,
+                             stage='Groove cut ' + b.name)
+    elif marks.groups:
+        for g in marks.groups:
+            paths = to_3d(R, u_layers(g.pieces, g.r), g.r)
+            if marks.colour:
+                _engrave(comp, paths, g.r, keep_name=g.name,
                          fill_args=(R, -p['handle_len'] - 1.0, Lz + 5.0,
                                     leadin_tools, parametric))
-        else:
-            _engrave(comp, to3(paths_for(offsets, types)), r)
+            else:
+                _engrave(comp, paths, g.r)
 
     for t in leadin_tools:
         _discard(comp, t)
 
     lap('lanes')
     # --- pin holes (the inlays already had theirs cut in memory)
-    tool = _pin_tool_tbm(p, R, H, z0, L, B)
+    tool = _pin_tool_tbm(p, R, marks.pins)
     if tool is not None:
         tool_body = _add_temp_body(comp, tool, 'Pin hole tools', parametric)
         for b in list(comp.bRepBodies):
@@ -1175,8 +1113,8 @@ def build(p, transform=None):
         _combine(comp, _jig_body(comp), [tool_body], CUT, keep=False, stage='Pin holes')
 
     lap('pin holes')
-    if p.get('pass_numbers', True) and p['engrave']:
-        nh, spots = pass_number_spots(p, R, H, L, B, z0)
+    if marks.numbers is not None:
+        nh, spots = marks.numbers
         if spots:
             _engrave_numbers(comp, R, nh, spots, NUMBER_DEPTH, parametric)
         else:

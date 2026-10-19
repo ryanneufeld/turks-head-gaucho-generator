@@ -7,6 +7,7 @@ import adsk.fusion
 
 from .geometry import *
 from .builder import jig_occurrence
+from .knot import min_diameter, ribbon_pct_for
 
 _app = adsk.core.Application.get()
 DEBUG_DEFAULT = False
@@ -55,27 +56,6 @@ def read_inputs(inputs):
     p['cleat'] = p['top_mode'] == 'cleat'
     p['ribbon_pct'] = ribbon_pct_for(p)
     return p
-
-
-def ribbon_pct_for(p, dia=None):
-    """Band width (all cord lanes) as % of strand pitch: the internal measure
-    the pin/bight geometry is built on."""
-    R = (dia or p['dia']) / 2.0
-    if p['span'] <= 0 or not knot_valid(p['leads'], p['bights']):
-        return 0.0
-    return 100.0 * band_width(p) / strand_pitch(R, p['span'], p['leads'], p['bights'])
-
-
-def min_diameter(p):
-    """Smallest mandrel diameter (cm, 1 mm steps) where the cord lanes fit."""
-    d = 0.5
-    while d < 30:
-        q = dict(p, dia=d)
-        q['ribbon_pct'] = ribbon_pct_for(q)
-        if q['ribbon_pct'] <= max_ribbon_pct(q, d / 2.0, q['span'], q['leads'], q['bights']):
-            return d
-        d += 0.1
-    return None
 
 
 def problems(p):

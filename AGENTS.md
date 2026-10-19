@@ -2,6 +2,12 @@
 
 Fusion 360 add-in (`Turks Head Gaucho Generator/`) and OpenSCAD port (`openscad/`) that build 3D-printable jigs for Turk's head, gaucho, herringbone and headhunter's knots. Active development is on the `v2` branch; `main` holds v1.
 
+## Code layout
+
+- `lib/turksHead/knot.py`: knot geometry shared by every output (lanes, over/under, pins, pass numbers, sizing), pure Python in the unrolled plane. Fusion-side code consumes it; do not recompute knot geometry elsewhere.
+- `lib/turksHead/geometry.py`: lower-level pure geometry; `builder.py`/`dialog.py`: Fusion only.
+- `tests/test_knot.py`: regression hashes of `knot_marks()`; run `python -m unittest discover tests`. Regenerate with `python tests/test_knot.py --update` only for intended geometry changes.
+
 ## Agent skills
 
 ### Issue tracker

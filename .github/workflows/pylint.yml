@@ -23,3 +23,5 @@ jobs:
       # the add-in folder name has spaces, so pass the file list NUL-separated
       run: |
         git ls-files -z '*.py' | xargs -0 pylint --rcfile=.pylintrc
+    - name: Knot geometry regression test
+      run: python -m unittest discover tests
