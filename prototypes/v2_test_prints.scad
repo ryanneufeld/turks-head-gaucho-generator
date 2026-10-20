@@ -81,14 +81,14 @@ twist = 30;
 entry = 7;              // depth from the socket face to the bottom of the slot
 ramp = 0.5;             // extra slot height at the entry, closing to seat_gap
 seat_gap = 0.1;         // axial play once seated (0.05 was stiff at the end)
-detent = 0.25;          // detent interference (radial); 0.12 could not be felt
+detent = 0.18;          // detent interference (radial); 0.12 too faint, 0.25 too stiff
 ramp_end = 0.6;         // roof reaches seat height this far through the twist, then
                         // stays level, so the last stretch is free and the click stands out
 lug_half = lug_w / (PI * spig) * 180;
-// hard stop: the slot's far end sits just past the lug's leading inner corner,
-// so the lug stops exactly at the seat (round 2 over-rotated by ~1-2 deg + slack)
+// hard stop: the slot's far end is a flat wall parallel to the lug's leading
+// face, stop_slack beyond it, so the whole face lands at once (a radial end
+// wall only met the lug's inner corner and let it over-rotate ~1 deg)
 stop_slack = 0.1;       // mm of travel left past the seat
-lead_half = atan((lug_w / 2 + stop_slack) / (spig / 2));
 H = 45;                 // socket height (it is also the wrap-test tube)
 zb = H - entry - 0.5;   // slot floor in the socket
 r_wall = spig / 2 + lug_r + cl_r;   // slot outer wall
@@ -126,8 +126,10 @@ module slot(a0) {
         hull() for (t = [t0, t1]) {
             a = a0 - t * twist;
             roof = lug_h + seat_gap + ramp * max(0, 1 - t / ramp_end);
-            rotate(a) for (s = [-1, 1])
-                rotate(s < 0 ? -lead_half : lug_half + 1) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
+            rotate(a) {
+                translate([0, -lug_w / 2 - stop_slack - 0.02, zb]) cube([r_wall, 0.02, roof]);
+                rotate(lug_half + 1) translate([0, -0.01, zb]) cube([r_wall, 0.02, roof]);
+            }
         }
     }
 }

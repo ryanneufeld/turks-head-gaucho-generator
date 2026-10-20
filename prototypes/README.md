@@ -1,5 +1,7 @@
 # v2 test prints (issue #2), round 2
 
+Round 5 bayonet: round 4 detent too stiff and it over-rotated on locking. Detent 0.25 → 0.18 mm; slot end is now a flat wall parallel to the lug's leading face (0.1 mm slack) instead of a radial wall that only met the lug's inner corner. Checked: click 22–27°, free seat 28–30.4°, full-face stop at ~30.5°.
+
 Round 4 bayonet: round 3 lined up and drew tight but was stiff at the end and the click was lost. Roof now reaches seat height 60% through the twist and stays level; seat play 0.05 → 0.1 mm; detent 0.12 → 0.25 mm. Checked: free to ~20°, click 22–27°, free seat 28–30°, stop ~30.5°.
 
 Round 4 sheet (accepted): stem shortened to 1 mm; each slit end gets a papercraft relief cut (2.5 mm, 40° off the slit, angled back toward the sheet edge) so the corners flex open for the cap, then close behind it. Bayonet unchanged from round 3.
